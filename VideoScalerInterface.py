@@ -3,6 +3,7 @@ from tkinter import messagebox
 
 import VideoScaler
 import ProcessFolder
+import JoinFiles
 
 def get_rgb(rgb):
     """translates an rgb tuple of int to a tkinter friendly color code
@@ -26,7 +27,7 @@ def window():
         ProcessFolder.main(windowBg, buttonBg, activeButtonBg)
 
     def join_videos():
-        messagebox.showerror("Error", "haven't made that one yet :(")
+        JoinFiles.main(windowBg, buttonBg, activeButtonBg)
 
 
 
