@@ -25,7 +25,10 @@ def get_total_frames(video_path):
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         output_lines = result.stdout.strip().splitlines()
-        duration_str = output_lines[3]
+        if len(output_lines)>2:
+            duration_str = output_lines[3]
+        else:
+            duration_str = output_lines[2]
         fps_str = output_lines[0].split("/")[0]
         return int(int(float(duration_str)) * int(fps_str))
     except (subprocess.CalledProcessError, FileNotFoundError, ValueError, IndexError) as e:
@@ -108,7 +111,8 @@ def get_pixel(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = 
     #VH_window.transient(root)
     VH_window.grab_set()
 
-    orientation = tk.StringVar(VH_window, value="")
+    x = tk.IntVar(VH_window, value=1280)
+    y = tk.IntVar(VH_window, value=720) 
     selected = tk.BooleanVar(VH_window)
 
     def set_hd():
@@ -117,6 +121,14 @@ def get_pixel(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = 
 
     def set_fhd():
         selected.set(True)
+        x.set(1920)
+        y.set(1080)
+        VH_window.destroy()
+
+    def set_4k():
+        selected.set(True)
+        x.set(3840)
+        y.set(2160)
         VH_window.destroy()
 
     label = tk.Label(VH_window, text="Video Resolution", bg=windowBg, fg="white", font=("Arial", "16", "bold"))
@@ -130,13 +142,17 @@ def get_pixel(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = 
                            activebackground=activeButtonBg, activeforeground="white", borderwidth=2)
     vertical_button.grid(row=1, column=1, pady=10, padx=5)
 
+    vertical_button = tk.Button(VH_window, text="FHD:4k", command=set_4k, bg=buttonBg, fg="white", font=("Arial", "10", "bold"),
+                           activebackground=activeButtonBg, activeforeground="white", borderwidth=2)
+    vertical_button.grid(row=1, column=2, pady=10, padx=5)
+
     VH_window.wait_window()
 
     # If closed without selection
     if not selected.get():
-        return 1280, 720
+        return x.get(), y.get()
     else:
-        return 1920, 1080
+        return x.get(), y.get()
 
 
 def get_crf(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332'):
