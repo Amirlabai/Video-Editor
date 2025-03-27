@@ -8,12 +8,11 @@ import subprocess
 import os
 import re
 
-from VideoScaler import scale_video, get_ratio
-
+from VideoScaler import *
 WINBOLL = True
 
 
-def get_total_frames(video_path, output_text, root):
+def unused_get_total_frames(video_path, output_text, root):
     """Extract video duration and FPS using ffprobe."""
     try:
         cmd = [

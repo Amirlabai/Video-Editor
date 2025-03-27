@@ -30,6 +30,8 @@ def get_total_frames(video_path):
         else:
             duration_str = output_lines[2]
         fps_str = output_lines[0].split("/")[0]
+        if int(fps_str) == 0:
+            fps_str = output_lines[1].split("/")[0]
         return int(int(float(duration_str)) * int(fps_str))
     except (subprocess.CalledProcessError, FileNotFoundError, ValueError, IndexError) as e:
         print(f"Error: {e}")
