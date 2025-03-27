@@ -60,7 +60,9 @@ def window():
     close_button = tk.Button(root, text="Close Program", command=close_program, bg=get_rgb((200,30,30)), fg="white", font=("Arial", "10", "bold"),
                            activebackground=get_rgb((100,50,50)), activeforeground="white", borderwidth=2)
     close_button.pack(side="bottom", fill="x", pady=(5, 10), padx=10)
-
+    
+    root.protocol("WM_DELETE_WINDOW", close_program)
+    
     root.mainloop()
 
 def main():

@@ -293,7 +293,7 @@ def scale_video(input_file, output_file, total_frames, output_text, root,ratio=F
                     hours, minutes = divmod(remaining_time, 3600)
                     minutes, seconds = divmod(minutes, 60)
                     percent = (frames / total_frames) * 100
-                    progress_message = f"🟢 Progress: {frames}/{total_frames} frames ({percent:.2f}%) - Remaining: {hours:02}:{minutes:02}:{seconds:02}"
+                    progress_message = f"🟢 Progress: {frames}/{total_frames} frames ({percent:.2f}%) | Running: {elapsed/60:.2f} - Remaining: {hours:02}:{minutes:02}:{seconds:02}"
 
                     output_text.delete(progress_line_index, f"{progress_line_index} lineend")
                     output_text.insert(progress_line_index, progress_message)
