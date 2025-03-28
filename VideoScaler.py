@@ -26,9 +26,9 @@ def get_total_frames(video_path):
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         output_lines = result.stdout.strip().splitlines()
         if len(output_lines)>2:
-            duration_str = output_lines[3]
+            duration_str = output_lines[-1]
         else:
-            duration_str = output_lines[2]
+            duration_str = output_lines[1]
         fps_str = output_lines[0].split("/")[0]
         if int(fps_str) == 0:
             fps_str = output_lines[1].split("/")[0]
@@ -40,7 +40,7 @@ def get_total_frames(video_path):
 
 def average_list(myList):
     tot = sum(myList)
-    return tot / len(myList) if myList else 0
+    return float(tot / len(myList)) if myList else 0
 
 
 def get_ratio(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332'):
@@ -271,9 +271,12 @@ def scale_video(input_file, output_file, total_frames, output_text, root,ratio=F
         output_text.see(tk.END)
 
         start_time = time.perf_counter()
+        tot_time =start_time
         prev_frames = 0
-        avg_frame_diff = [0] * 10
-        avg_time_diff = [0] * 10
+        avg_frame_diff = [0] * 50
+        avg_time_diff = [0] * 50
+        avg_frame = 0
+        avg_time = 0
         i = 0
 
         for line in process.stdout:
@@ -284,26 +287,32 @@ def scale_video(input_file, output_file, total_frames, output_text, root,ratio=F
                     frame_diff = frames - prev_frames
                     now = time.perf_counter()
                     elapsed = now - start_time
+                    
                     avg_frame_diff[i] = frame_diff
                     avg_time_diff[i] = elapsed
-                    try:
-                        remaining_time = ((total_frames - frames) / (
-                                    average_list(avg_frame_diff) / average_list(avg_time_diff)))
-                    except ZeroDivisionError:
+                    avg_frame = average_list(avg_frame_diff)
+                    avg_time = average_list(avg_time_diff)
+
+                    if avg_time > 0:
+                        remaining_time = ((total_frames - frames) / (avg_frame / avg_time))
+                    else:
                         remaining_time = 0
+                    #print(f"avrage frame diff: {avg_frame_diff, avg_frame} \n average time diff: {avg_time_diff, avg_time} \n i = {i} \n remaintime: {remaining_time} \n")
                     remaining_time = int(remaining_time)
                     hours, minutes = divmod(remaining_time, 3600)
                     minutes, seconds = divmod(minutes, 60)
                     percent = (frames / total_frames) * 100
-                    progress_message = f"🟢 Progress: {frames}/{total_frames} frames ({percent:.2f}%) | Running: {elapsed/60:.2f} - Remaining: {hours:02}:{minutes:02}:{seconds:02}"
+                    progress_message = f"🟢 Progress: {frames}/{total_frames} frames ({percent:.2f}%) avg frame: {avg_frame} | Running: {(now - tot_time)/60:.2f} - Remaining: {hours:02}:{minutes:02}:{seconds:02}"
 
+                    #index_str = f"{progress_line_index}.0"
                     output_text.delete(progress_line_index, f"{progress_line_index} lineend")
                     output_text.insert(progress_line_index, progress_message)
                     output_text.see(tk.END)
 
                     prev_frames = frames
                     start_time = now
-                    i = (i + 1) % 10
+                    j=i
+                    i = (i + 1) % 50
 
         process.wait()
 
@@ -336,7 +345,7 @@ def select_video(output_text, window,windowBg = '#1e1e1e', buttonBg = '#323232',
         #pixel = [1280,720]
         now = datetime.now()
         output_path = os.path.splitext(file_path)[0]
-        output_path = f"{output_path.split('_')[0]}_scaled_{now.strftime('%Y%m%d_%H%M%S')}{ratio[1]}.mp4"
+        output_path = f"{output_path.split('_')[0]}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
         total_frames = get_total_frames(file_path)
         if total_frames:
             output_text.insert(tk.END, f"📂 Selected file: {file_path}\n")
@@ -361,7 +370,7 @@ def main(windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332')
     window.title("Video Scaler")
     window.iconify()
 
-    output_text = tk.Text(window, height=20, width=80, bg=buttonBg, fg="white")
+    output_text = tk.Text(window, height=20, width=100, bg=buttonBg, fg="white")
     output_text.pack()
 
     select_video(output_text, window,windowBg, buttonBg, activeButtonBg)

@@ -67,9 +67,9 @@ def process_videos_in_folder(folder_path, output_text, root):
             file_name = filename.split(".")[0]
         else:
             file_name = filename
-        output_file = os.path.join(folder_path, f"{file_name}_scaled_{now.strftime("%Y%m%d_%H%M%S")}{ratio[1]}.mp4")
+        output_file = os.path.join(folder_path, f"{file_name}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime("%Y%m%d_%H%M%S")}.mp4")
 
-        total_frames = get_total_frames(input_file, output_text, root)
+        total_frames = get_total_frames(input_file)
 
         if total_frames:
             output_text.insert(tk.END, f"\n📄 Processing file {index}/{total_files}: {filename}\n")
@@ -85,6 +85,8 @@ def process_videos_in_folder(folder_path, output_text, root):
             output_text.see(tk.END)
 
             scale_video(input_file, output_file, total_frames, output_text, root,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
+
+        output_text.insert(tk.END, f"\n")
 
     root.after(1000, lambda: (messagebox.showinfo("Done", "✅ All videos have been processed!"), root.destroy()))
 
@@ -113,7 +115,7 @@ def main(windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332')
     root.geometry("700x400")
     root.withdraw()
 
-    output_text = tk.Text(root, height=20, width=80, bg=buttonBg, fg="white")
+    output_text = tk.Text(root, height=20, width=120, bg=buttonBg, fg="white")
     output_text.pack(padx=10, pady=10)
 
     select_folder(output_text, root)
