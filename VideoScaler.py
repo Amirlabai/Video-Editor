@@ -10,6 +10,7 @@ import re
 import time
 from threading import Thread
 from datetime import datetime
+import torch
 
 WINBOLL = True
 
@@ -42,6 +43,65 @@ def average_list(myList):
     tot = sum(myList)
     return float(tot / len(myList)) if myList else 0
 
+def extract_ratio(folder_path,filename):
+    orientation = ""
+    xaxis = "0"
+    yaxis = "0"
+    crfValue = "28"
+    preset = "medium"
+
+    file_path = f"{folder_path}/{filename}"
+
+    try:
+        # Construct the ffmpeg command to get video stream information
+        command = [
+            'ffprobe',
+            '-v',
+            'error',
+            '-select_streams',
+            'v:0',
+            '-show_entries',
+            'stream=width,height',
+            '-of',
+            'default=noprint_wrappers=1:nokey=1',
+            file_path
+        ]
+
+        # Execute the ffmpeg command
+        process = subprocess.run(command, capture_output=True, text=True, check=True)
+        output = process.stdout.strip()
+        width_str, height_str = output.split('\n')
+        width = int(width_str)
+        height = int(height_str)
+        bool_ratio = True
+
+        # Determine orientation and set xaxis and yaxis
+        if width > height:
+            orientation = "horizontal"
+            xaxis = "1280"
+            yaxis = "720"
+        elif height > width:
+            orientation = "vertical"
+            xaxis = "720"
+            yaxis = "1280"
+            bool_ratio = False
+        else:
+            orientation = "square" # Handle cases where width and height are equal
+            xaxis = "720" # You can adjust these values as needed for square videos
+            yaxis = "720"
+
+        return bool_ratio, orientation, xaxis, yaxis, crfValue, preset
+
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}")
+        return False, orientation, xaxis, yaxis, crfValue, preset
+    except subprocess.CalledProcessError as e:
+        print(f"Error running ffprobe: {e}")
+        print(f"FFprobe output: {e.stderr}")
+        return False, orientation, xaxis, yaxis, crfValue, preset
+    except ValueError:
+        print(f"Error parsing ffprobe output: {output}")
+        return False, orientation, xaxis, yaxis, crfValue, preset
 
 def get_ratio(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332'):
     VH_window = tk.Toplevel(root)
@@ -53,7 +113,7 @@ def get_ratio(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = 
     orientation = tk.StringVar(VH_window, value="")
     xaxis = tk.StringVar(VH_window, value="1280")
     yaxis = tk.StringVar(VH_window, value="720")
-    crfValue = tk.StringVar(VH_window, value="28")
+    crfValue = tk.StringVar(VH_window, value="23")
     preset = tk.StringVar(VH_window, value="medium")
     selected = tk.BooleanVar(VH_window)
 
@@ -78,7 +138,9 @@ def get_ratio(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = 
         VH_window.destroy()
 
     def close_window():
+        ratio = extract_ratio
         VH_window.destroy()
+        return ratio
 
 
     label = tk.Label(VH_window, text="video Orientation", bg=windowBg, fg="white", font=("Arial", "16", "bold"))
@@ -101,7 +163,7 @@ def get_ratio(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = 
 
     # If closed without selection
     if orientation.get() == "":
-        return False, "_horizontal", "1280", "720", "26", "medium"
+        return False, "_horizontal", "1280", "720", "23", "medium"
     else:
         return selected.get(), orientation.get(), xaxis.get(), yaxis.get(),crfValue.get(), preset.get()
 
@@ -238,9 +300,9 @@ def get_preset(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg =
     return preset.get()
 
 
-def scale_video(input_file, output_file, total_frames, output_text, root,ratio=False, xaxis="1280", yaxis="720",crf="26",preset="medium"):
+def scale_video_CPU(input_file, output_file, total_frames, output_text, root,ratio=False, xaxis="1280", yaxis="720",crf="26",preset="medium"):
 
-    if ratio:
+    if ratio:   #   if True vertical
         ffmpeg_cmd = [
             "ffmpeg", "-i", input_file,
             "-vf", f"scale={yaxis}:{xaxis}",
@@ -249,13 +311,106 @@ def scale_video(input_file, output_file, total_frames, output_text, root,ratio=F
             "-progress", "pipe:1", "-nostats",
             output_file
         ]
-    else:
+    else:   # false hroizontal
         ffmpeg_cmd = [
             "ffmpeg", "-i", input_file,
             "-vf", f"scale={xaxis}:{yaxis}",
             "-c:v", "libx264", "-crf", crf, "-preset", preset,
             "-c:a", "aac", "-b:a", "128k",
             "-progress", "pipe:1", "-nostats",
+            output_file
+        ]
+
+    try:
+        process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+
+        output_text.insert(tk.END, "🚀 Starting FFmpeg...\n")
+        output_text.see(tk.END)
+
+        # Placeholder for progress line
+        progress_line_index = output_text.index(tk.END)
+        output_text.insert(tk.END, f"🟢 {input_file} Starting...\n")
+        output_text.see(tk.END)
+
+        start_time = time.perf_counter()
+        tot_time =start_time
+        prev_frames = 0
+        avg_frame_diff = [0] * 50
+        avg_time_diff = [0] * 50
+        avg_frame = 0
+        avg_time = 0
+        i = 0
+
+        for line in process.stdout:
+            match = re.search(r"frame=\s*(\d+)", line)
+            if match:
+                frames = int(match.group(1))
+                if total_frames:
+                    frame_diff = frames - prev_frames
+                    now = time.perf_counter()
+                    elapsed = now - start_time
+                    
+                    avg_frame_diff[i] = frame_diff
+                    avg_time_diff[i] = elapsed
+                    avg_frame = average_list(avg_frame_diff)
+                    avg_time = average_list(avg_time_diff)
+
+                    if avg_time > 0 and avg_frame > 0:
+                        remaining_time = ((total_frames - frames) / (avg_frame / avg_time))
+                    else:
+                        remaining_time = 0
+                    #print(f"avrage frame diff: {avg_frame_diff, avg_frame} \n average time diff: {avg_time_diff, avg_time} \n i = {i} \n remaintime: {remaining_time} \n")
+                    remaining_time = int(remaining_time)
+                    hours, minutes = divmod(remaining_time, 3600)
+                    minutes, seconds = divmod(minutes, 60)
+                    percent = (frames / total_frames) * 100
+                    progress_message = f"🟢 Progress: {frames}/{total_frames} frames ({percent:.2f}%) avg frame: {avg_frame} | Running: {(now - tot_time)/60:.2f} - Remaining: {hours:02}:{minutes:02}:{seconds:02}"
+
+                    #index_str = f"{progress_line_index}.0"
+                    output_text.delete(progress_line_index, f"{progress_line_index} lineend")
+                    output_text.insert(progress_line_index, progress_message)
+                    output_text.see(tk.END)
+
+                    prev_frames = frames
+                    start_time = now
+                    j=i
+                    i = (i + 1) % 50
+
+        process.wait()
+
+        #root.after(1000, lambda: (messagebox.showinfo("Done", "✅ All videos have been processed!"), root.destroy()))
+
+    except FileNotFoundError:
+        messagebox.showerror("Error", "FFmpeg not found! Make sure it's installed and added to PATH.")
+
+def scale_video_GPU(input_file, output_file, total_frames, output_text, root,ratio=False, xaxis="1280", yaxis="720",crf="26",preset="medium"):
+
+    if ratio:   #   if True vertical
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-i", input_file,
+            "-vf", f"scale_npp={yaxis}:{xaxis}",
+            "-c:v", "h264_nvenc",
+            "-preset", preset,
+            "-crf", crf,
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-progress", "pipe:1",
+            "-nostats",
+            output_file
+        ]
+    else:   # false hrizontal
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-i", input_file,
+            "-vf", f"scale_npp={xaxis}:{yaxis}",
+            "-c:v", "h264_nvenc",
+            "-preset", preset,
+            "-crf", crf,
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-progress", "pipe:1",
+            "-nostats",
             output_file
         ]
 
@@ -323,8 +478,13 @@ def scale_video(input_file, output_file, total_frames, output_text, root,ratio=F
 
 
 def run_scaling(input_file, output_file, total_frames, output_text, window,ratio,x,y,crf,preset):
-    """Runs the scaling in a separate thread."""
-    thread = Thread(target=scale_video, args=(input_file, output_file, total_frames, output_text, window,ratio,x,y,crf,preset))
+    """Runs the scaling in a separate thread.
+    if gpu_flag:
+        thread = Thread(target=scale_video_GPU, args=(input_file, output_file, total_frames, output_text, window,ratio,x,y,crf,preset))
+    else:
+        thread = Thread(target=scale_video_CPU, args=(input_file, output_file, total_frames, output_text, window,ratio,x,y,crf,preset))
+    thread.start()"""
+    thread = Thread(target=scale_video_CPU, args=(input_file, output_file, total_frames, output_text, window,ratio,x,y,crf,preset))
     thread.start()
 
 
@@ -370,8 +530,24 @@ def main(windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332')
     window.title("Video Scaler")
     window.iconify()
 
+    # Create a BooleanVar to store the state of the GPU flag
+    '''gpu_flag_var = tk.BooleanVar()
+    gpu_flag_var.set(False)  # Set the initial state to False
+
+    # Initialize gpu_flag with the BooleanVar's value
+    gpu_flag = gpu_flag_var.get()'''
+
     output_text = tk.Text(window, height=20, width=100, bg=buttonBg, fg="white")
-    output_text.pack()
+    output_text.pack(pady=10)
+
+    # Create the Checkbutton for GPU usage
+    '''gpu_checkbox = tk.Checkbutton(window,
+                                  text="Use GPU",
+                                  variable=gpu_flag_var,
+                                  bg=windowBg,
+                                  fg="white",
+                                  selectcolor=activeButtonBg)  # Color when checked
+    gpu_checkbox.pack(pady=10)'''
 
     select_video(output_text, window,windowBg, buttonBg, activeButtonBg)
 

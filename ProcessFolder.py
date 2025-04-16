@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox
 import subprocess
 import os
 import re
+import torch
 
 from VideoScaler import *
 WINBOLL = True
@@ -47,6 +48,49 @@ def run_scaling(folder_path, output_text, root):
     thread = Thread(target=process_videos_in_folder, args=(folder_path, output_text, root))
     thread.start()
 
+def run_file(folder_path, output_text, root, index, filename, total_files ,ratio):
+    now = datetime.now()
+    input_file = F"{folder_path}/{filename}"
+    #if "_" in filename:
+    #    file_name = filename.split("_")[0]
+    if "mp4" in filename:
+        file_name = filename.split(".")[0]
+    else:
+        file_name = filename
+    output_file = os.path.join(folder_path, f"{file_name}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime("%Y%m%d_%H%M%S")}.mp4")
+
+    total_frames = get_total_frames(input_file)
+
+    if total_frames:
+        output_text.insert(tk.END, f"\n📄 Processing file {index}/{total_files}: {filename}\n")
+        output_text.insert(tk.END, f"📁 Output: {output_file}\n")
+        output_text.insert(tk.END, f"🎞️ Frames: {total_frames}\n")
+        output_text.see(tk.END)
+
+        """Runs the scaling in a separate thread.
+        if gpu_flag:
+            scale_video_GPU(input_file, output_file, total_frames, output_text, root,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
+        else:
+            scale_video_GPU(input_file, output_file, total_frames, output_text, root,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
+        thread.start()"""
+        scale_video_CPU(input_file, output_file, total_frames, output_text, root,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
+        
+        
+    else:
+        output_text.insert(tk.END, f"\n⚠️ Running {filename} (frame count error)\n")
+        output_text.insert(tk.END, f"\n📄 Processing file {index}/{total_files}: {filename}\n")
+        output_text.insert(tk.END, f"📁 Output: {output_file}\n")
+        output_text.see(tk.END)
+
+        """Runs the scaling in a separate thread.
+        if gpu_flag:
+            scale_video_GPU(input_file, output_file, total_frames, output_text, root,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
+        else:
+            scale_video_GPU(input_file, output_file, total_frames, output_text, root,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
+        thread.start()"""
+        scale_video_CPU(input_file, output_file, total_frames, output_text, root,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
+
+    output_text.insert(tk.END, f"\n")
 
 def process_videos_in_folder(folder_path, output_text, root):
     supported_formats = (".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv")
@@ -58,35 +102,41 @@ def process_videos_in_folder(folder_path, output_text, root):
         return
 
     ratio = get_ratio(root)
-    for index, filename in enumerate(video_files, start=1):
-        now = datetime.now()
-        input_file = os.path.join(folder_path, filename)
-        if "_" in filename:
-            file_name = filename.split("_")[0]
-        elif "mp4" in filename:
-            file_name = filename.split(".")[0]
-        else:
-            file_name = filename
-        output_file = os.path.join(folder_path, f"{file_name}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime("%Y%m%d_%H%M%S")}.mp4")
+    if ratio[0] == True:
+        for index, filename in enumerate(video_files, start=1):
+            run_file(folder_path, output_text, root, index, filename, total_files ,ratio)
+    else:
+        for index, filename in enumerate(video_files, start=1):
+            ratio = extract_ratio(folder_path,filename)
+            run_file(folder_path, output_text, root, index, filename, total_files ,ratio)
+    #     now = datetime.now()
+    #     input_file = os.path.join(folder_path, filename)
+    #     if "_" in filename:
+    #         file_name = filename.split("_")[0]
+    #     elif "mp4" in filename:
+    #         file_name = filename.split(".")[0]
+    #     else:
+    #         file_name = filename
+    #     output_file = os.path.join(folder_path, f"{file_name}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime("%Y%m%d_%H%M%S")}.mp4")
 
-        total_frames = get_total_frames(input_file)
+    #     total_frames = get_total_frames(input_file)
 
-        if total_frames:
-            output_text.insert(tk.END, f"\n📄 Processing file {index}/{total_files}: {filename}\n")
-            output_text.insert(tk.END, f"📁 Output: {output_file}\n")
-            output_text.insert(tk.END, f"🎞️ Frames: {total_frames}\n")
-            output_text.see(tk.END)
+    #     if total_frames:
+    #         output_text.insert(tk.END, f"\n📄 Processing file {index}/{total_files}: {filename}\n")
+    #         output_text.insert(tk.END, f"📁 Output: {output_file}\n")
+    #         output_text.insert(tk.END, f"🎞️ Frames: {total_frames}\n")
+    #         output_text.see(tk.END)
 
-            scale_video(input_file, output_file, total_frames, output_text, root,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
-        else:
-            output_text.insert(tk.END, f"\n⚠️ Running {filename} (frame count error)\n")
-            output_text.insert(tk.END, f"\n📄 Processing file {index}/{total_files}: {filename}\n")
-            output_text.insert(tk.END, f"📁 Output: {output_file}\n")
-            output_text.see(tk.END)
+    #         scale_video(input_file, output_file, total_frames, output_text, root,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
+    #     else:
+    #         output_text.insert(tk.END, f"\n⚠️ Running {filename} (frame count error)\n")
+    #         output_text.insert(tk.END, f"\n📄 Processing file {index}/{total_files}: {filename}\n")
+    #         output_text.insert(tk.END, f"📁 Output: {output_file}\n")
+    #         output_text.see(tk.END)
 
-            scale_video(input_file, output_file, total_frames, output_text, root,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
+    #         scale_video(input_file, output_file, total_frames, output_text, root,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
 
-        output_text.insert(tk.END, f"\n")
+    #     output_text.insert(tk.END, f"\n")
 
     root.after(1000, lambda: (messagebox.showinfo("Done", "✅ All videos have been processed!"), root.destroy()))
 
