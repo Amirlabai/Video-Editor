@@ -44,6 +44,95 @@ def average_list(myList):
     tot = sum(myList)
     return float(tot / len(myList)) if myList else 0
 
+def process_ffmpeg_output(process, output_text, progress_line_index, total_frames, error_list, input_file):
+    """Process FFmpeg stdout output, track progress, and capture errors.
+    
+    Returns:
+        tuple: (return_code, error_list) - Process return code and updated error list
+    """
+    start_time = time.perf_counter()
+    tot_time = start_time
+    prev_frames = 0
+    avg_frame_diff = [0] * 50
+    avg_time_diff = [0] * 50
+    avg_frame = 0
+    avg_time = 0
+    i = 0
+    j = 0
+    
+    error_patterns = [
+        r'\[error\]',
+        r'Error',
+        r'error',
+        r'ERROR',
+        r'Failed',
+        r'failed',
+        r'FAILED',
+        r'Impossible',
+        r'impossible',
+        r'Could not',
+        r'could not',
+        r'Cannot',
+        r'cannot',
+        r'Invalid',
+        r'invalid',
+        r'not found',
+        r'Not found',
+        r'NOT FOUND',
+        r'Permission denied',
+        r'permission denied',
+        r'No such file',
+        r'no such file',
+        r'Hardware is lacking',
+        r'hardware is lacking',
+        r'Function not implemented',
+        r'function not implemented'
+    ]
+
+    for line in process.stdout:
+        # Check for error patterns in each line
+        for pattern in error_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                error_list.append(line.strip())
+                break
+        
+        match = re.search(r"frame=\s*(\d+)", line)
+        if match:
+            frames = int(match.group(1))
+            if total_frames:
+                frame_diff = frames - prev_frames
+                now = time.perf_counter()
+                elapsed = now - start_time
+                
+                avg_frame_diff[i] = frame_diff
+                avg_time_diff[i] = elapsed
+                if j == 0:
+                    avg_frame = average_list(avg_frame_diff)
+                    avg_time = average_list(avg_time_diff)
+                    i = (i + 1) % 50
+
+                if avg_time > 0 and avg_frame > 0:
+                    remaining_time = ((total_frames - frames) / (avg_frame / avg_time))
+                else:
+                    remaining_time = 0
+                
+                remaining_time = int(remaining_time)
+                hours, minutes = divmod(remaining_time, 3600)
+                minutes, seconds = divmod(minutes, 60)
+                percent = (frames / total_frames) * 100
+                progress_message = f"🟢 Progress: {frames}/{total_frames} frames ({percent:.2f}%) avg frame: {avg_frame} | Running: {(now - tot_time)/60:.2f} - Remaining: {hours:02}:{minutes:02}:{seconds:02}"
+
+                output_text.delete(progress_line_index, f"{progress_line_index} lineend")
+                output_text.insert(progress_line_index, progress_message)
+                output_text.see(tk.END)
+
+                prev_frames = frames
+                start_time = now
+                j = (j + 1) % 5
+
+    return_code = process.wait()
+    return return_code, error_list
+
 def get_ffmpeg_error_code(return_code):
     """Look up FFmpeg return code meanings."""
     error_codes = {
@@ -446,84 +535,8 @@ def scale_video_CPU(input_file, output_file, total_frames, output_text, root,rat
         output_text.insert(tk.END, f"🟢 {input_file} Starting...\n")
         output_text.see(tk.END)
 
-        start_time = time.perf_counter()
-        tot_time =start_time
-        prev_frames = 0
-        avg_frame_diff = [0] * 50
-        avg_time_diff = [0] * 50
-        avg_frame = 0
-        avg_time = 0
-        i = 0
-        j=0
-        error_patterns = [
-            r'\[error\]',
-            r'Error',
-            r'error',
-            r'ERROR',
-            r'Failed',
-            r'failed',
-            r'FAILED',
-            r'Impossible',
-            r'impossible',
-            r'Could not',
-            r'could not',
-            r'Cannot',
-            r'cannot',
-            r'Invalid',
-            r'invalid',
-            r'not found',
-            r'Not found',
-            r'NOT FOUND',
-            r'Permission denied',
-            r'permission denied',
-            r'No such file',
-            r'no such file'
-        ]
-
-        for line in process.stdout:
-            # Check for error patterns in each line
-            line_lower = line.lower()
-            for pattern in error_patterns:
-                if re.search(pattern, line, re.IGNORECASE):
-                    error_list.append(line.strip())
-                    break
-            
-            match = re.search(r"frame=\s*(\d+)", line)
-            if match:
-                frames = int(match.group(1))
-                if total_frames:
-                    frame_diff = frames - prev_frames
-                    now = time.perf_counter()
-                    elapsed = now - start_time
-                    
-                    avg_frame_diff[i] = frame_diff
-                    avg_time_diff[i] = elapsed
-                    if j==0:
-                        avg_frame = average_list(avg_frame_diff)
-                        avg_time = average_list(avg_time_diff)
-                        i = (i + 1) % 50
-
-                    if avg_time > 0 and avg_frame > 0:
-                        remaining_time = ((total_frames - frames) / (avg_frame / avg_time))
-                    else:
-                        remaining_time = 0
-                    #print(f"avrage frame diff: {avg_frame_diff, avg_frame} \n average time diff: {avg_time_diff, avg_time} \n i = {i} \n remaintime: {remaining_time} \n")
-                    remaining_time = int(remaining_time)
-                    hours, minutes = divmod(remaining_time, 3600)
-                    minutes, seconds = divmod(minutes, 60)
-                    percent = (frames / total_frames) * 100
-                    progress_message = f"🟢 Progress: {frames}/{total_frames} frames ({percent:.2f}%) avg frame: {avg_frame} | Running: {(now - tot_time)/60:.2f} - Remaining: {hours:02}:{minutes:02}:{seconds:02}"
-
-                    #index_str = f"{progress_line_index}.0"
-                    output_text.delete(progress_line_index, f"{progress_line_index} lineend")
-                    output_text.insert(progress_line_index, progress_message)
-                    output_text.see(tk.END)
-
-                    prev_frames = frames
-                    start_time = now
-                    j = (j + 1) % 5
-
-        return_code = process.wait()
+        # Process FFmpeg output and track progress
+        return_code, error_list = process_ffmpeg_output(process, output_text, progress_line_index, total_frames, error_list, input_file)
         
         # Check return code and log errors
         if return_code != 0 or len(error_list) > 0:
@@ -637,88 +650,8 @@ def scale_video_GPU(input_file, output_file, total_frames, output_text, root,rat
         output_text.insert(tk.END, f"🟢 {input_file} Starting...\n")
         output_text.see(tk.END)
 
-        start_time = time.perf_counter()
-        tot_time =start_time
-        prev_frames = 0
-        avg_frame_diff = [0] * 50
-        avg_time_diff = [0] * 50
-        avg_frame = 0
-        avg_time = 0
-        i = 0
-        j=0
-        error_patterns = [
-            r'\[error\]',
-            r'Error',
-            r'error',
-            r'ERROR',
-            r'Failed',
-            r'failed',
-            r'FAILED',
-            r'Impossible',
-            r'impossible',
-            r'Could not',
-            r'could not',
-            r'Cannot',
-            r'cannot',
-            r'Invalid',
-            r'invalid',
-            r'not found',
-            r'Not found',
-            r'NOT FOUND',
-            r'Permission denied',
-            r'permission denied',
-            r'No such file',
-            r'no such file',
-            r'Hardware is lacking',
-            r'hardware is lacking',
-            r'Function not implemented',
-            r'function not implemented'
-        ]
-
-        for line in process.stdout:
-            # Check for error patterns in each line
-            line_lower = line.lower()
-            for pattern in error_patterns:
-                if re.search(pattern, line, re.IGNORECASE):
-                    error_list.append(line.strip())
-                    break
-            
-            match = re.search(r"frame=\s*(\d+)", line)
-            if match:
-                frames = int(match.group(1))
-                if total_frames:
-                    frame_diff = frames - prev_frames
-                    now = time.perf_counter()
-                    elapsed = now - start_time
-                    
-                    avg_frame_diff[i] = frame_diff
-                    avg_time_diff[i] = elapsed
-                    if j==0:
-                        avg_frame = average_list(avg_frame_diff)
-                        avg_time = average_list(avg_time_diff)
-                        i = (i + 1) % 50
-
-                    if avg_time > 0 and avg_frame > 0:
-                        remaining_time = ((total_frames - frames) / (avg_frame / avg_time))
-                    else:
-                        remaining_time = 0
-                    #print(f"avrage frame diff: {avg_frame_diff, avg_frame} \n average time diff: {avg_time_diff, avg_time} \n i = {i} \n remaintime: {remaining_time} \n")
-                    remaining_time = int(remaining_time)
-                    hours, minutes = divmod(remaining_time, 3600)
-                    minutes, seconds = divmod(minutes, 60)
-                    percent = (frames / total_frames) * 100
-                    progress_message = f"🟢 Progress: {frames}/{total_frames} frames ({percent:.2f}%) avg frame: {avg_frame} | Running: {(now - tot_time)/60:.2f} - Remaining: {hours:02}:{minutes:02}:{seconds:02}"
-
-                    #index_str = f"{progress_line_index}.0"
-                    output_text.delete(progress_line_index, f"{progress_line_index} lineend")
-                    output_text.insert(progress_line_index, progress_message)
-                    output_text.see(tk.END)
-
-                    prev_frames = frames
-                    start_time = now
-                    j = (j + 1) % 5
-
-        return_code = process.wait()
+        # Process FFmpeg output and track progress
+        return_code, error_list = process_ffmpeg_output(process, output_text, progress_line_index, total_frames, error_list, input_file)
         
         # Check for NVENC DLL loading errors specifically
         nvenc_dll_error = any("Cannot load nvEncodeAPI64.dll" in err or "nvEncodeAPI" in err for err in error_list)
