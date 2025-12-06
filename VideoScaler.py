@@ -11,6 +11,7 @@ import time
 from threading import Thread
 from datetime import datetime
 import torch
+import multiprocessing
 
 WINBOLL = True
 
@@ -42,6 +43,113 @@ def get_total_frames(video_path):
 def average_list(myList):
     tot = sum(myList)
     return float(tot / len(myList)) if myList else 0
+
+def get_ffmpeg_error_code(return_code):
+    """Look up FFmpeg return code meanings."""
+    error_codes = {
+        0: "Success",
+        1: "Unknown error",
+        -1: "Process terminated",
+        -2: "Invalid argument",
+        -3: "No such file or directory",
+        -4: "Permission denied",
+        -5: "I/O error",
+        -6: "No space left on device",
+        -7: "Out of memory",
+        -8: "Invalid data found",
+        -9: "Operation not permitted",
+        -10: "Protocol error",
+        -11: "Not found",
+        -12: "Not available",
+        -13: "Invalid",
+        -14: "EOF",
+        -15: "Not implemented",
+        -16: "Bug",
+        -17: "Unknown error",
+        -18: "Experimental",
+        -19: "Input changed",
+        -20: "Output changed",
+        -22: "Invalid argument",
+        -40: "Function not implemented",
+        -50: "Invalid argument",
+        -100: "Unknown error"
+    }
+    return error_codes.get(return_code, f"Unknown error code: {return_code}")
+
+def check_gpu_compatibility():
+    """Check if GPU (NVENC) is available via ffmpeg."""
+    try:
+        # Check if h264_nvenc encoder is available
+        cmd = ["ffmpeg", "-hide_banner", "-encoders"]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
+        if "h264_nvenc" in result.stdout:
+            return True
+        return False
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+def get_cpu_cores():
+    """Get the number of CPU cores available."""
+    return multiprocessing.cpu_count()
+
+def get_performance_settings(root, windowBg='#1e1e1e', buttonBg='#323232', activeButtonBg='#192332'):
+    """Dialog to get performance settings: threading and GPU usage."""
+    perf_window = tk.Toplevel(root)
+    perf_window.configure(bg=windowBg)
+    perf_window.title("Performance Settings")
+    perf_window.grab_set()
+    
+    use_gpu = tk.BooleanVar(perf_window, value=False)
+    use_all_cores = tk.BooleanVar(perf_window, value=False)
+    gpu_available = check_gpu_compatibility()
+    cpu_cores = get_cpu_cores()
+    
+    def confirm_settings():
+        perf_window.destroy()
+    
+    # GPU option
+    if gpu_available:
+        gpu_label = tk.Label(perf_window, text="🚀 GPU (NVENC) Available!", bg=windowBg, fg="#4CAF50", 
+                            font=("Arial", "12", "bold"))
+        gpu_label.grid(row=0, column=0, columnspan=2, pady=10, padx=10)
+        
+        gpu_checkbox = tk.Checkbutton(perf_window, text="Use GPU encoding (Much Faster!)", 
+                                      variable=use_gpu, bg=windowBg, fg="white",
+                                      selectcolor=activeButtonBg, font=("Arial", "10", "bold"))
+        gpu_checkbox.grid(row=1, column=0, columnspan=2, pady=5, padx=10, sticky="w")
+    else:
+        gpu_label = tk.Label(perf_window, text="⚠️ GPU (NVENC) Not Available", bg=windowBg, fg="#FF9800", 
+                            font=("Arial", "12", "bold"))
+        gpu_label.grid(row=0, column=0, columnspan=2, pady=10, padx=10)
+        
+        gpu_info = tk.Label(perf_window, text="Using CPU encoding", bg=windowBg, fg="white", 
+                           font=("Arial", "9"))
+        gpu_info.grid(row=1, column=0, columnspan=2, pady=5, padx=10)
+    
+    # Threading option
+    threading_label = tk.Label(perf_window, text="CPU Threading", bg=windowBg, fg="white", 
+                              font=("Arial", "12", "bold"))
+    threading_label.grid(row=2, column=0, columnspan=2, pady=(20, 5), padx=10)
+    
+    cores_info = tk.Label(perf_window, text=f"Available CPU cores: {cpu_cores}", bg=windowBg, fg="white", 
+                         font=("Arial", "9"))
+    cores_info.grid(row=3, column=0, columnspan=2, pady=5, padx=10)
+    
+    threading_checkbox = tk.Checkbutton(perf_window, 
+                                        text=f"Use all CPU cores (Default: FFmpeg auto, All cores: {cpu_cores} threads)", 
+                                        variable=use_all_cores, bg=windowBg, fg="white",
+                                        selectcolor=activeButtonBg, font=("Arial", "10", "bold"))
+    threading_checkbox.grid(row=4, column=0, columnspan=2, pady=5, padx=10, sticky="w")
+    
+    # Confirm button
+    confirm_button = tk.Button(perf_window, text="Confirm", command=confirm_settings, 
+                              bg=buttonBg, fg="white", font=("Arial", "10", "bold"),
+                              activebackground=activeButtonBg, activeforeground="white", borderwidth=2)
+    confirm_button.grid(row=5, column=0, columnspan=2, pady=20, padx=10)
+    
+    perf_window.wait_window()
+    
+    return use_gpu.get(), use_all_cores.get(), cpu_cores
 
 def extract_ratio(folder_path,filename):
     orientation = ""
@@ -300,13 +408,14 @@ def get_preset(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg =
     return preset.get()
 
 
-def scale_video_CPU(input_file, output_file, total_frames, output_text, root,ratio=False, xaxis="1280", yaxis="720",crf="26",preset="medium"):
+def scale_video_CPU(input_file, output_file, total_frames, output_text, root,ratio=False, xaxis="1280", yaxis="720",crf="26",preset="medium", threads=0):
 
     if ratio:   #   if True vertical
         ffmpeg_cmd = [
             "ffmpeg", "-i", input_file,
             "-vf", f"scale={yaxis}:{xaxis}",
             "-c:v", "libx264", "-crf", crf, "-preset", preset,
+            "-threads", str(threads),
             "-c:a", "aac", "-b:a", "128k",
             "-progress", "pipe:1", "-nostats",
             output_file
@@ -316,15 +425,20 @@ def scale_video_CPU(input_file, output_file, total_frames, output_text, root,rat
             "ffmpeg", "-i", input_file,
             "-vf", f"scale={xaxis}:{yaxis}",
             "-c:v", "libx264", "-crf", crf, "-preset", preset,
+            "-threads", str(threads),
             "-c:a", "aac", "-b:a", "128k",
             "-progress", "pipe:1", "-nostats",
             output_file
         ]
+    
+    # Initialize error list before try block so it's available in exception handlers
+    error_list = []
 
     try:
         process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
 
-        output_text.insert(tk.END, "🚀 Starting FFmpeg...\n")
+        threading_info = f" with {threads} threads" if threads > 0 else " (auto threading)"
+        output_text.insert(tk.END, f"🚀 Starting FFmpeg{threading_info}...\n")
         output_text.see(tk.END)
 
         # Placeholder for progress line
@@ -340,8 +454,40 @@ def scale_video_CPU(input_file, output_file, total_frames, output_text, root,rat
         avg_frame = 0
         avg_time = 0
         i = 0
+        j=0
+        error_patterns = [
+            r'\[error\]',
+            r'Error',
+            r'error',
+            r'ERROR',
+            r'Failed',
+            r'failed',
+            r'FAILED',
+            r'Impossible',
+            r'impossible',
+            r'Could not',
+            r'could not',
+            r'Cannot',
+            r'cannot',
+            r'Invalid',
+            r'invalid',
+            r'not found',
+            r'Not found',
+            r'NOT FOUND',
+            r'Permission denied',
+            r'permission denied',
+            r'No such file',
+            r'no such file'
+        ]
 
         for line in process.stdout:
+            # Check for error patterns in each line
+            line_lower = line.lower()
+            for pattern in error_patterns:
+                if re.search(pattern, line, re.IGNORECASE):
+                    error_list.append(line.strip())
+                    break
+            
             match = re.search(r"frame=\s*(\d+)", line)
             if match:
                 frames = int(match.group(1))
@@ -352,8 +498,10 @@ def scale_video_CPU(input_file, output_file, total_frames, output_text, root,rat
                     
                     avg_frame_diff[i] = frame_diff
                     avg_time_diff[i] = elapsed
-                    avg_frame = average_list(avg_frame_diff)
-                    avg_time = average_list(avg_time_diff)
+                    if j==0:
+                        avg_frame = average_list(avg_frame_diff)
+                        avg_time = average_list(avg_time_diff)
+                        i = (i + 1) % 50
 
                     if avg_time > 0 and avg_frame > 0:
                         remaining_time = ((total_frames - frames) / (avg_frame / avg_time))
@@ -373,51 +521,115 @@ def scale_video_CPU(input_file, output_file, total_frames, output_text, root,rat
 
                     prev_frames = frames
                     start_time = now
-                    j=i
-                    i = (i + 1) % 50
+                    j = (j + 1) % 5
 
-        process.wait()
-
-        #root.after(1000, lambda: (messagebox.showinfo("Done", "✅ All videos have been processed!"), root.destroy()))
+        return_code = process.wait()
+        
+        # Check return code and log errors
+        if return_code != 0 or len(error_list) > 0:
+            error_msg = get_ffmpeg_error_code(return_code)
+            output_text.insert(tk.END, f"\n❌ CPU Encoding Error (Return Code: {return_code})\n")
+            output_text.insert(tk.END, f"Error Code Meaning: {error_msg}\n")
+            output_text.insert(tk.END, f"Input file: {input_file}\n")
+            output_text.insert(tk.END, f"Output file: {output_file}\n")
+            
+            # Display all captured errors
+            if len(error_list) > 0:
+                output_text.insert(tk.END, f"\n📋 Captured Errors ({len(error_list)} total):\n")
+                for idx, error in enumerate(error_list, 1):
+                    output_text.insert(tk.END, f"  {idx}. {error}\n")
+            else:
+                output_text.insert(tk.END, f"\n⚠️ No specific error messages captured, but process failed.\n")
+            
+            output_text.see(tk.END)
+            
+            # Create error summary for dialog
+            error_summary = f"CPU encoding failed!\n\nReturn Code: {return_code}\nError: {error_msg}\n\n"
+            if len(error_list) > 0:
+                error_summary += f"Captured {len(error_list)} error(s):\n"
+                for idx, error in enumerate(error_list[:5], 1):  # Show first 5 errors
+                    error_summary += f"{idx}. {error[:100]}\n"  # Truncate long errors
+                if len(error_list) > 5:
+                    error_summary += f"... and {len(error_list) - 5} more errors\n"
+            error_summary += "\nCheck the output log for full details."
+            
+            root.after(100, lambda: messagebox.showerror("Encoding Error", error_summary))
+            return
+        
+        output_text.insert(tk.END, f"\n✅ CPU encoding completed successfully!\n")
+        output_text.see(tk.END)
+        root.after(1000, lambda: (messagebox.showinfo("Done", "✅ All videos have been processed!"), root.destroy()))
 
     except FileNotFoundError:
+        error_list.append("FFmpeg not found! Make sure it's installed and added to PATH.")
+        output_text.insert(tk.END, "\n❌ Error: FFmpeg not found! Make sure it's installed and added to PATH.\n")
+        output_text.insert(tk.END, f"📋 Captured Errors:\n  1. {error_list[0]}\n")
+        output_text.see(tk.END)
         messagebox.showerror("Error", "FFmpeg not found! Make sure it's installed and added to PATH.")
+    except Exception as e:
+        error_list.append(f"Exception: {str(e)}")
+        output_text.insert(tk.END, f"\n❌ CPU Encoding Exception: {str(e)}\n")
+        output_text.insert(tk.END, f"📋 Captured Errors:\n  1. {error_list[0]}\n")
+        output_text.see(tk.END)
+        root.after(100, lambda: messagebox.showerror("Encoding Error", f"CPU encoding exception:\n{str(e)}"))
 
 def scale_video_GPU(input_file, output_file, total_frames, output_text, root,ratio=False, xaxis="1280", yaxis="720",crf="26",preset="medium"):
+    # Map CPU presets to NVENC-compatible presets
+    nvenc_preset_map = {
+        "superfast": "fast",
+        "fast": "fast",
+        "medium": "medium",
+        "slow": "slow",
+        "veryslow": "slow"
+    }
+    nvenc_preset = nvenc_preset_map.get(preset, "medium")
+    
+    # Convert CRF to CQ (NVENC uses -cq instead of -crf)
+    # NVENC CQ range is typically 0-51, similar to CRF
+    cq_value = crf
 
     if ratio:   #   if True vertical
+        # Simplified approach: CPU decoding/scaling, GPU encoding
+        # This avoids CUDA hardware acceleration issues while still using GPU for encoding
         ffmpeg_cmd = [
             "ffmpeg",
             "-i", input_file,
-            "-vf", f"scale_npp={yaxis}:{xaxis}",
+            "-vf", f"scale={yaxis}:{xaxis}",
             "-c:v", "h264_nvenc",
-            "-preset", preset,
-            "-crf", crf,
+            "-preset", nvenc_preset,
+            "-rc", "vbr",
+            "-cq", cq_value,
             "-c:a", "aac",
             "-b:a", "128k",
+            "-pix_fmt", "yuv420p",
             "-progress", "pipe:1",
             "-nostats",
             output_file
         ]
-    else:   # false hrizontal
+    else:   # false horizontal
         ffmpeg_cmd = [
             "ffmpeg",
             "-i", input_file,
-            "-vf", f"scale_npp={xaxis}:{yaxis}",
+            "-vf", f"scale={xaxis}:{yaxis}",
             "-c:v", "h264_nvenc",
-            "-preset", preset,
-            "-crf", crf,
+            "-preset", nvenc_preset,
+            "-rc", "vbr",
+            "-cq", cq_value,
             "-c:a", "aac",
             "-b:a", "128k",
+            "-pix_fmt", "yuv420p",
             "-progress", "pipe:1",
             "-nostats",
             output_file
         ]
+    
+    # Initialize error list before try block so it's available in exception handlers
+    error_list = []
 
     try:
         process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
 
-        output_text.insert(tk.END, "🚀 Starting FFmpeg...\n")
+        output_text.insert(tk.END, "🚀 Starting FFmpeg with GPU acceleration (NVENC)...\n")
         output_text.see(tk.END)
 
         # Placeholder for progress line
@@ -433,8 +645,44 @@ def scale_video_GPU(input_file, output_file, total_frames, output_text, root,rat
         avg_frame = 0
         avg_time = 0
         i = 0
+        j=0
+        error_patterns = [
+            r'\[error\]',
+            r'Error',
+            r'error',
+            r'ERROR',
+            r'Failed',
+            r'failed',
+            r'FAILED',
+            r'Impossible',
+            r'impossible',
+            r'Could not',
+            r'could not',
+            r'Cannot',
+            r'cannot',
+            r'Invalid',
+            r'invalid',
+            r'not found',
+            r'Not found',
+            r'NOT FOUND',
+            r'Permission denied',
+            r'permission denied',
+            r'No such file',
+            r'no such file',
+            r'Hardware is lacking',
+            r'hardware is lacking',
+            r'Function not implemented',
+            r'function not implemented'
+        ]
 
         for line in process.stdout:
+            # Check for error patterns in each line
+            line_lower = line.lower()
+            for pattern in error_patterns:
+                if re.search(pattern, line, re.IGNORECASE):
+                    error_list.append(line.strip())
+                    break
+            
             match = re.search(r"frame=\s*(\d+)", line)
             if match:
                 frames = int(match.group(1))
@@ -445,10 +693,12 @@ def scale_video_GPU(input_file, output_file, total_frames, output_text, root,rat
                     
                     avg_frame_diff[i] = frame_diff
                     avg_time_diff[i] = elapsed
-                    avg_frame = average_list(avg_frame_diff)
-                    avg_time = average_list(avg_time_diff)
+                    if j==0:
+                        avg_frame = average_list(avg_frame_diff)
+                        avg_time = average_list(avg_time_diff)
+                        i = (i + 1) % 50
 
-                    if avg_time > 0:
+                    if avg_time > 0 and avg_frame > 0:
                         remaining_time = ((total_frames - frames) / (avg_frame / avg_time))
                     else:
                         remaining_time = 0
@@ -466,25 +716,96 @@ def scale_video_GPU(input_file, output_file, total_frames, output_text, root,rat
 
                     prev_frames = frames
                     start_time = now
-                    j=i
-                    i = (i + 1) % 50
+                    j = (j + 1) % 5
 
-        process.wait()
-
-        #root.after(1000, lambda: (messagebox.showinfo("Done", "✅ All videos have been processed!"), root.destroy()))
+        return_code = process.wait()
+        
+        # Check for NVENC DLL loading errors specifically
+        nvenc_dll_error = any("Cannot load nvEncodeAPI64.dll" in err or "nvEncodeAPI" in err for err in error_list)
+        
+        # Check return code and log errors
+        if return_code != 0 or len(error_list) > 0:
+            error_msg = get_ffmpeg_error_code(return_code)
+            output_text.insert(tk.END, f"\n❌ GPU Encoding Error (Return Code: {return_code})\n")
+            output_text.insert(tk.END, f"Error Code Meaning: {error_msg}\n")
+            output_text.insert(tk.END, f"Input file: {input_file}\n")
+            output_text.insert(tk.END, f"Output file: {output_file}\n")
+            
+            # Display all captured errors
+            if len(error_list) > 0:
+                output_text.insert(tk.END, f"\n📋 Captured Errors ({len(error_list)} total):\n")
+                for idx, error in enumerate(error_list, 1):
+                    output_text.insert(tk.END, f"  {idx}. {error}\n")
+            else:
+                output_text.insert(tk.END, f"\n⚠️ No specific error messages captured, but process failed.\n")
+            
+            # Check if NVENC DLL error and offer fallback
+            if nvenc_dll_error:
+                output_text.insert(tk.END, f"\n⚠️ NVENC DLL not available. GPU encoding cannot be used.\n")
+                output_text.insert(tk.END, f"💡 Falling back to CPU encoding...\n")
+                output_text.see(tk.END)
+                
+                # Fallback to CPU encoding
+                root.after(100, lambda: messagebox.showwarning("GPU Unavailable", 
+                    "GPU encoding failed because NVENC DLL is not available.\n\n"
+                    "This usually means:\n"
+                    "- NVIDIA drivers are not installed\n"
+                    "- FFmpeg was not built with NVENC support\n"
+                    "- GPU hardware doesn't support NVENC\n\n"
+                    "Falling back to CPU encoding..."))
+                
+                # Call CPU encoding function instead
+                # Delete output file first if it exists
+                if os.path.exists(output_file):
+                    try:
+                        os.remove(output_file)
+                        output_text.insert(tk.END, f"\n🗑️ Existing output file '{output_file}' deleted before CPU encoding fallback.\n")
+                        output_text.see(tk.END)
+                    except Exception as e:
+                        output_text.insert(tk.END, f"\n⚠️ Could not delete existing output file '{output_file}': {str(e)}\n")
+                        output_text.see(tk.END)
+                scale_video_CPU(input_file, output_file, total_frames, output_text, root, ratio=ratio, xaxis=xaxis, yaxis=yaxis, crf=crf, preset=preset, threads=0)
+                return
+            
+            output_text.see(tk.END)
+            
+            # Create error summary for dialog
+            error_summary = f"GPU encoding failed!\n\nReturn Code: {return_code}\nError: {error_msg}\n\n"
+            if len(error_list) > 0:
+                error_summary += f"Captured {len(error_list)} error(s):\n"
+                for idx, error in enumerate(error_list[:5], 1):  # Show first 5 errors
+                    error_summary += f"{idx}. {error[:100]}\n"  # Truncate long errors
+                if len(error_list) > 5:
+                    error_summary += f"... and {len(error_list) - 5} more errors\n"
+            error_summary += "\nCheck the output log for full details."
+            
+            root.after(100, lambda: messagebox.showerror("Encoding Error", error_summary))
+            return
+        
+        output_text.insert(tk.END, f"\n✅ GPU encoding completed successfully!\n")
+        output_text.see(tk.END)
+        root.after(1000, lambda: (messagebox.showinfo("Done", "✅ All videos have been processed!"), root.destroy()))
 
     except FileNotFoundError:
+        error_list.append("FFmpeg not found! Make sure it's installed and added to PATH.")
+        output_text.insert(tk.END, "\n❌ Error: FFmpeg not found! Make sure it's installed and added to PATH.\n")
+        output_text.insert(tk.END, f"📋 Captured Errors:\n  1. {error_list[0]}\n")
+        output_text.see(tk.END)
         messagebox.showerror("Error", "FFmpeg not found! Make sure it's installed and added to PATH.")
+    except Exception as e:
+        error_list.append(f"Exception: {str(e)}")
+        output_text.insert(tk.END, f"\n❌ GPU Encoding Exception: {str(e)}\n")
+        output_text.insert(tk.END, f"📋 Captured Errors:\n  1. {error_list[0]}\n")
+        output_text.see(tk.END)
+        root.after(100, lambda: messagebox.showerror("Encoding Error", f"GPU encoding exception:\n{str(e)}"))
 
 
-def run_scaling(input_file, output_file, total_frames, output_text, window,ratio,x,y,crf,preset):
-    """Runs the scaling in a separate thread.
-    if gpu_flag:
-        thread = Thread(target=scale_video_GPU, args=(input_file, output_file, total_frames, output_text, window,ratio,x,y,crf,preset))
+def run_scaling(input_file, output_file, total_frames, output_text, window, ratio, x, y, crf, preset, use_gpu=False, threads=0):
+    """Runs the scaling in a separate thread."""
+    if use_gpu:
+        thread = Thread(target=scale_video_GPU, args=(input_file, output_file, total_frames, output_text, window, ratio, x, y, crf, preset))
     else:
-        thread = Thread(target=scale_video_CPU, args=(input_file, output_file, total_frames, output_text, window,ratio,x,y,crf,preset))
-    thread.start()"""
-    thread = Thread(target=scale_video_CPU, args=(input_file, output_file, total_frames, output_text, window,ratio,x,y,crf,preset))
+        thread = Thread(target=scale_video_CPU, args=(input_file, output_file, total_frames, output_text, window, ratio, x, y, crf, preset, threads))
     thread.start()
 
 
@@ -498,6 +819,10 @@ def select_video(output_text, window,windowBg = '#1e1e1e', buttonBg = '#323232',
     )
 
     if file_path:
+        # Get performance settings first
+        use_gpu, use_all_cores, cpu_cores = get_performance_settings(window, windowBg, buttonBg, activeButtonBg)
+        threads = cpu_cores if use_all_cores else 0  # 0 = FFmpeg default (auto)
+        
         ratio = get_ratio(window,windowBg, buttonBg, activeButtonBg)
         #ratio= [True,'hozi']
         #print(ratio)
@@ -507,17 +832,23 @@ def select_video(output_text, window,windowBg = '#1e1e1e', buttonBg = '#323232',
         output_path = os.path.splitext(file_path)[0]
         output_path = f"{output_path.split('_')[0]}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
         total_frames = get_total_frames(file_path)
+        
+        # Display settings info
+        encoding_type = "GPU (NVENC)" if use_gpu else "CPU"
+        threading_info = f"All cores ({cpu_cores} threads)" if use_all_cores else "Default (auto)"
+        output_text.insert(tk.END, f"⚙️ Encoding: {encoding_type} | Threading: {threading_info}\n")
+        
         if total_frames:
             output_text.insert(tk.END, f"📂 Selected file: {file_path}\n")
             output_text.insert(tk.END, f"📁 Output file: {output_path}\n")
             output_text.insert(tk.END, f"🎞️ Total frames: {total_frames}\n")
-            run_scaling(file_path, output_path, total_frames, output_text, window,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
+            run_scaling(file_path, output_path, total_frames, output_text, window, ratio[0], ratio[2], ratio[3], ratio[4], ratio[5], use_gpu, threads)
         else:
             output_text.insert(tk.END, "⚠️ Could not determine total frames. Progress wont be displayed.\n")
             output_text.insert(tk.END, f"📂 Selected file: {file_path}\n")
             output_text.insert(tk.END, f"📁 Output file: {output_path}\n")
             output_text.insert(tk.END, f"🎞️ Total frames: {total_frames}\n")
-            run_scaling(file_path, output_path, total_frames, output_text, window,ratio[0],ratio[2],ratio[3],ratio[4],ratio[5])
+            run_scaling(file_path, output_path, total_frames, output_text, window, ratio[0], ratio[2], ratio[3], ratio[4], ratio[5], use_gpu, threads)
         output_text.see(tk.END)
     else:
         WINBOLL = False

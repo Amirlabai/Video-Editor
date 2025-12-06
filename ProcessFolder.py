@@ -57,7 +57,7 @@ def run_file(folder_path, output_text, root, index, filename, total_files ,ratio
         file_name = filename.split(".")[0]
     else:
         file_name = filename
-    output_file = os.path.join(folder_path, f"{file_name}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime("%Y%m%d_%H%M%S")}.mp4")
+    output_file = os.path.join(folder_path, f"{file_name}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime('%Y%m%d_%H%M%S')}.mp4")
 
     total_frames = get_total_frames(input_file)
 
@@ -117,7 +117,7 @@ def process_videos_in_folder(folder_path, output_text, root):
     #         file_name = filename.split(".")[0]
     #     else:
     #         file_name = filename
-    #     output_file = os.path.join(folder_path, f"{file_name}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime("%Y%m%d_%H%M%S")}.mp4")
+    #     output_file = os.path.join(folder_path, f"{file_name}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime('%Y%m%d_%H%M%S')}.mp4")
 
     #     total_frames = get_total_frames(input_file)
 
