@@ -5,9 +5,10 @@ from tkinter import filedialog, messagebox
 from threading import Thread
 import time
 import re
+from .constants import SUPPORTED_VIDEO_FORMATS, JOINED_OUTPUT_FILENAME, CONCAT_LIST_FILENAME, DEFAULT_WINDOW_BG, DEFAULT_BUTTON_BG, DEFAULT_ACTIVE_BUTTON_BG
 
 
-WINBOLL = True
+WINBOOL = True
 
 
 def get_video_info(video_path):
@@ -45,10 +46,26 @@ def check_compatibility(video_files, output_text):
 
 
 def create_concat_file(video_files, folder_path):
-    concat_file = os.path.join(folder_path, "concat_list.txt")
+    """Create FFmpeg concat file with properly escaped paths.
+    
+    FFmpeg concat demuxer requires:
+    - Absolute paths (or relative with -safe 0)
+    - Single quotes escaped if present in path
+    - Forward slashes on Windows for better compatibility
+    """
+    concat_file = os.path.join(folder_path, CONCAT_LIST_FILENAME).replace("\\", "/")
+    
     with open(concat_file, "w", encoding="utf-8") as f:
         for video in video_files:
-            f.write(f"file '{video}'\n")
+            # Convert to absolute path and normalize
+            abs_path = os.path.abspath(video)
+            # Use forward slashes for Windows compatibility with FFmpeg
+            normalized_path = abs_path.replace("\\", "/")
+            # Escape single quotes in path (FFmpeg concat format: ' becomes '\'')
+            escaped_path = normalized_path.replace("'", "'\\''")
+            # Write in FFmpeg concat format
+            f.write(f"file '{escaped_path}'\n")
+    
     return concat_file
 
 
@@ -107,11 +124,10 @@ def join_videos(concat_file, output_file, total_files, output_text, root):
 
 
 def process_folder(folder_path, output_text, root):
-    supported_formats = (".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv")
     video_files = sorted([
-        os.path.join(folder_path, f)
+        os.path.join(folder_path, f).replace("\\", "/")
         for f in os.listdir(folder_path)
-        if f.lower().endswith(supported_formats)
+        if f.lower().endswith(SUPPORTED_VIDEO_FORMATS)
     ])
     total_files = len(video_files)
 
@@ -127,20 +143,20 @@ def process_folder(folder_path, output_text, root):
         return
 
     concat_file = create_concat_file(video_files, folder_path)
-    output_file = os.path.join(folder_path, "joined_output.mp4")
+    output_file = os.path.join(folder_path, JOINED_OUTPUT_FILENAME).replace("\\", "/")
 
     join_videos(concat_file, output_file, total_files, output_text, root)
 
 
 def select_folder(output_text, root):
-    global WINBOLL
+    global WINBOOL
     folder_path = filedialog.askdirectory(title="Select a Folder Containing Videos")
     if folder_path:
         output_text.insert(tk.END, f"📁 Selected folder: {folder_path}\n")
         output_text.see(tk.END)
         Thread(target=process_folder, args=(folder_path, output_text, root)).start()
     else:
-        WINBOLL = False
+        WINBOOL = False
 
 
 def main(windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332'):
@@ -153,7 +169,7 @@ def main(windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332')
     output_text.pack()
 
     select_folder(output_text, root)
-    if WINBOLL:
+    if WINBOOL:
         root.deiconify()
         root.mainloop()
     else:

@@ -2,7 +2,6 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import *
-from pickle import GLOBAL
 from tkinter import filedialog, messagebox
 import subprocess
 import os
@@ -10,10 +9,69 @@ import re
 import time
 from threading import Thread
 from datetime import datetime
-import torch
 import multiprocessing
+import logging
+from pathlib import Path
+from .constants import (
+    HD_WIDTH, HD_HEIGHT, FHD_WIDTH, FHD_HEIGHT, UHD_4K_WIDTH, UHD_4K_HEIGHT,
+    DEFAULT_CRF, HIGH_QUALITY_CRF, MEDIUM_QUALITY_CRF, LOW_QUALITY_CRF,
+    CRF_MIN, CRF_MAX, DEFAULT_PRESET,
+    DEFAULT_AUDIO_CODEC, DEFAULT_AUDIO_BITRATE,
+    CPU_CODEC, GPU_CODEC,
+    DEFAULT_WINDOW_BG, DEFAULT_BUTTON_BG, DEFAULT_ACTIVE_BUTTON_BG,
+    CANCEL_BUTTON_BG, CANCEL_BUTTON_ACTIVE_BG,
+    DEFAULT_WINDOW_TITLE, CANCELLATION_MESSAGE_DELAY, SUCCESS_MESSAGE_DELAY,
+    LOG_DIR_NAME, LOG_FILENAME
+)
 
-WINBOLL = True
+WINBOOL = True
+
+# Global variables for cancel functionality
+_current_process = None
+_cancel_requested = False
+
+# Setup logging
+def setup_logger():
+    """Setup logging configuration."""
+    log_dir = Path.home() / LOG_DIR_NAME
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / LOG_FILENAME
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file, encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+    return logging.getLogger(__name__)
+
+logger = setup_logger()
+
+def sanitize_path(file_path):
+    """Sanitize file path to prevent path injection attacks.
+    
+    Args:
+        file_path: Input file path
+        
+    Returns:
+        str: Sanitized absolute path, or None if invalid
+    """
+    try:
+        # Convert to Path object and resolve to absolute path
+        path = Path(file_path).resolve()
+        
+        # Check if path exists and is a file
+        if not path.exists():
+            logger.warning(f"Path does not exist: {file_path}")
+            return None
+            
+        # Return as string
+        return str(path)
+    except (ValueError, OSError) as e:
+        logger.error(f"Invalid path: {file_path} - {e}")
+        return None
 
 def get_total_frames(video_path):
     """Extract video duration and FPS using ffprobe."""
@@ -36,7 +94,7 @@ def get_total_frames(video_path):
             fps_str = output_lines[1].split("/")[0]
         return int(int(float(duration_str)) * int(fps_str))
     except (subprocess.CalledProcessError, FileNotFoundError, ValueError, IndexError) as e:
-        print(f"Error: {e}")
+        logger.error(f"Error getting total frames for {video_path}: {e}")
         return None
 
 
@@ -90,6 +148,19 @@ def process_ffmpeg_output(process, output_text, progress_line_index, total_frame
     ]
 
     for line in process.stdout:
+        # Check for cancellation
+        global _cancel_requested
+        if _cancel_requested:
+            logger.info("Cancel requested, terminating FFmpeg process")
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            output_text.insert(tk.END, "\n⚠️ Operation cancelled by user\n")
+            output_text.see(tk.END)
+            return -1, error_list
+        
         # Check for error patterns in each line
         for pattern in error_patterns:
             if re.search(pattern, line, re.IGNORECASE):
@@ -290,21 +361,20 @@ def extract_ratio(folder_path,filename):
         return bool_ratio, orientation, xaxis, yaxis, crfValue, preset
 
     except FileNotFoundError:
-        print(f"Error: File not found at {file_path}")
+        logger.error(f"File not found at {file_path}")
         return False, orientation, xaxis, yaxis, crfValue, preset
     except subprocess.CalledProcessError as e:
-        print(f"Error running ffprobe: {e}")
-        print(f"FFprobe output: {e.stderr}")
+        logger.error(f"Error running ffprobe for {file_path}: {e}")
+        logger.debug(f"FFprobe stderr: {e.stderr}")
         return False, orientation, xaxis, yaxis, crfValue, preset
-    except ValueError:
-        print(f"Error parsing ffprobe output: {output}")
+    except ValueError as e:
+        logger.error(f"Error parsing ffprobe output for {file_path}: {output}")
         return False, orientation, xaxis, yaxis, crfValue, preset
 
 def get_ratio(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332'):
     VH_window = tk.Toplevel(root)
     VH_window.configure(bg=windowBg)
     VH_window.title("Choose Orientation")
-    #VH_window.transient(root)
     VH_window.grab_set()
 
     orientation = tk.StringVar(VH_window, value="")
@@ -335,9 +405,10 @@ def get_ratio(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = 
         VH_window.destroy()
 
     def close_window():
-        ratio = extract_ratio
+        # Return default settings when "default settings" is clicked
+        orientation.set("_horizontal")
+        selected.set(False)
         VH_window.destroy()
-        return ratio
 
 
     label = tk.Label(VH_window, text="video Orientation", bg=windowBg, fg="white", font=("Arial", "16", "bold"))
@@ -360,7 +431,7 @@ def get_ratio(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = 
 
     # If closed without selection
     if orientation.get() == "":
-        return False, "_horizontal", "1280", "720", "23", "medium"
+        return False, "_horizontal", str(HD_WIDTH), str(HD_HEIGHT), HIGH_QUALITY_CRF, DEFAULT_PRESET
     else:
         return selected.get(), orientation.get(), xaxis.get(), yaxis.get(),crfValue.get(), preset.get()
 
@@ -369,11 +440,10 @@ def get_pixel(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = 
     VH_window = tk.Toplevel(root)
     VH_window.configure(bg=windowBg)
     VH_window.title("Choose pixels")
-    #VH_window.transient(root)
     VH_window.grab_set()
 
-    x = tk.IntVar(VH_window, value=1280)
-    y = tk.IntVar(VH_window, value=720) 
+    x = tk.IntVar(VH_window, value=HD_WIDTH)
+    y = tk.IntVar(VH_window, value=HD_HEIGHT) 
     selected = tk.BooleanVar(VH_window)
 
     def set_hd():
@@ -382,45 +452,43 @@ def get_pixel(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = 
 
     def set_fhd():
         selected.set(True)
-        x.set(1920)
-        y.set(1080)
+        x.set(FHD_WIDTH)
+        y.set(FHD_HEIGHT)
         VH_window.destroy()
 
     def set_4k():
         selected.set(True)
-        x.set(3840)
-        y.set(2160)
+        x.set(UHD_4K_WIDTH)
+        y.set(UHD_4K_HEIGHT)
         VH_window.destroy()
 
     label = tk.Label(VH_window, text="Video Resolution", bg=windowBg, fg="white", font=("Arial", "16", "bold"))
     label.grid(row=0, column=0, columnspan=2)
 
-    horizontal_button = tk.Button(VH_window, text="HD:1280x720", command=set_hd, bg=buttonBg, fg="white", font=("Arial", "10", "bold"),
+    horizontal_button = tk.Button(VH_window, text=f"HD:{HD_WIDTH}x{HD_HEIGHT}", command=set_hd, bg=buttonBg, fg="white", font=("Arial", "10", "bold"),
                            activebackground=activeButtonBg, activeforeground="white", borderwidth=2)
     horizontal_button.grid(row=1, column=0, pady=10, padx=5)
 
-    vertical_button = tk.Button(VH_window, text="FHD:1920x1080", command=set_fhd, bg=buttonBg, fg="white", font=("Arial", "10", "bold"),
+    vertical_button = tk.Button(VH_window, text=f"FHD:{FHD_WIDTH}x{FHD_HEIGHT}", command=set_fhd, bg=buttonBg, fg="white", font=("Arial", "10", "bold"),
                            activebackground=activeButtonBg, activeforeground="white", borderwidth=2)
     vertical_button.grid(row=1, column=1, pady=10, padx=5)
 
-    vertical_button = tk.Button(VH_window, text="FHD:4k", command=set_4k, bg=buttonBg, fg="white", font=("Arial", "10", "bold"),
+    vertical_button = tk.Button(VH_window, text=f"4K:{UHD_4K_WIDTH}x{UHD_4K_HEIGHT}", command=set_4k, bg=buttonBg, fg="white", font=("Arial", "10", "bold"),
                            activebackground=activeButtonBg, activeforeground="white", borderwidth=2)
     vertical_button.grid(row=1, column=2, pady=10, padx=5)
 
     VH_window.wait_window()
 
-    # If closed without selection
-    if not selected.get():
-        return x.get(), y.get()
-    else:
-        return x.get(), y.get()
+    # Return the selected resolution values
+    # Note: selected flag indicates if user chose FHD/4K (True) or HD (False)
+    # but we return the actual x, y values which are already set correctly
+    return x.get(), y.get()
 
 
 def get_crf(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332'):
     VH_window = tk.Toplevel(root)
     VH_window.configure(bg=windowBg)
     VH_window.title("Choose lossless range")
-    #VH_window.transient(root)
     VH_window.grab_set()
 
     crf = tk.StringVar(VH_window,value="")
@@ -434,10 +502,10 @@ def get_crf(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#
     label_2 = tk.Label(VH_window, text="the lower the better", bg=windowBg, fg="white", font=("Arial", "10", "bold"))
     label_2.pack(padx=10,pady=5)
 
-    horizontal_slider = tk.Scale(VH_window, from_=17, to=30, orient=HORIZONTAL, bg=buttonBg, fg="white", font=("Arial", "10", "bold"),
+    horizontal_slider = tk.Scale(VH_window, from_=CRF_MIN, to=CRF_MAX, orient=HORIZONTAL, bg=buttonBg, fg="white", font=("Arial", "10", "bold"),
                                  activebackground=activeButtonBg, borderwidth=2)
     horizontal_slider.pack(padx=10,pady=5)
-    horizontal_slider.set(26)
+    horizontal_slider.set(int(DEFAULT_CRF))
 
     vertical_button = tk.Button(VH_window, text="Set", command=set_crf, bg=buttonBg, fg="white", font=("Arial", "10", "bold"),
                            activebackground=activeButtonBg, activeforeground="white", borderwidth=2)
@@ -445,9 +513,9 @@ def get_crf(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#
 
     VH_window.wait_window()
 
-    # If closed without selection
-    if not crf == "":
-        return "26"
+    # If closed without selection, return default
+    if crf.get() == "":
+        return DEFAULT_CRF
     else:
         return crf.get()
 
@@ -456,7 +524,6 @@ def get_preset(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg =
     gp_window = tk.Toplevel(root)
     gp_window.configure(bg=windowBg)
     gp_window.title("Choose preset")
-    #VH_window.transient(root)
     gp_window.grab_set()
 
     preset = tk.StringVar(gp_window, value="")
@@ -497,15 +564,19 @@ def get_preset(root,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg =
     return preset.get()
 
 
-def scale_video_CPU(input_file, output_file, total_frames, output_text, root,ratio=False, xaxis="1280", yaxis="720",crf="26",preset="medium", threads=0):
+def scale_video_CPU(input_file, output_file, total_frames, output_text, root, ratio=False, xaxis=str(HD_WIDTH), yaxis=str(HD_HEIGHT), crf=DEFAULT_CRF, preset=DEFAULT_PRESET, threads=0):
+    global _current_process, _cancel_requested
+    
+    # Reset cancel flag
+    _cancel_requested = False
 
     if ratio:   #   if True vertical
         ffmpeg_cmd = [
             "ffmpeg", "-i", input_file,
             "-vf", f"scale={yaxis}:{xaxis}",
-            "-c:v", "libx264", "-crf", crf, "-preset", preset,
+            "-c:v", CPU_CODEC, "-crf", crf, "-preset", preset,
             "-threads", str(threads),
-            "-c:a", "aac", "-b:a", "128k",
+            "-c:a", DEFAULT_AUDIO_CODEC, "-b:a", DEFAULT_AUDIO_BITRATE,
             "-progress", "pipe:1", "-nostats",
             output_file
         ]
@@ -513,9 +584,9 @@ def scale_video_CPU(input_file, output_file, total_frames, output_text, root,rat
         ffmpeg_cmd = [
             "ffmpeg", "-i", input_file,
             "-vf", f"scale={xaxis}:{yaxis}",
-            "-c:v", "libx264", "-crf", crf, "-preset", preset,
+            "-c:v", CPU_CODEC, "-crf", crf, "-preset", preset,
             "-threads", str(threads),
-            "-c:a", "aac", "-b:a", "128k",
+            "-c:a", DEFAULT_AUDIO_CODEC, "-b:a", DEFAULT_AUDIO_BITRATE,
             "-progress", "pipe:1", "-nostats",
             output_file
         ]
@@ -525,6 +596,7 @@ def scale_video_CPU(input_file, output_file, total_frames, output_text, root,rat
 
     try:
         process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+        _current_process = process
 
         threading_info = f" with {threads} threads" if threads > 0 else " (auto threading)"
         output_text.insert(tk.END, f"🚀 Starting FFmpeg{threading_info}...\n")
@@ -537,6 +609,25 @@ def scale_video_CPU(input_file, output_file, total_frames, output_text, root,rat
 
         # Process FFmpeg output and track progress
         return_code, error_list = process_ffmpeg_output(process, output_text, progress_line_index, total_frames, error_list, input_file)
+        
+        # Clear process reference
+        _current_process = None
+        
+        # Handle cancellation
+        if _cancel_requested or return_code == -1:
+            # Clean up partial output file
+            if os.path.exists(output_file):
+                try:
+                    os.remove(output_file)
+                    logger.info(f"Removed partial output file: {output_file}")
+                    output_text.insert(tk.END, f"\n🗑️ Partial output file removed.\n")
+                except Exception as e:
+                    logger.warning(f"Could not remove partial file: {e}")
+            output_text.insert(tk.END, f"\n⚠️ Operation cancelled by user.\n")
+            output_text.see(tk.END)
+            # Close window after showing cancellation message
+            root.after(CANCELLATION_MESSAGE_DELAY, lambda: (messagebox.showinfo("Cancelled", "Operation was cancelled."), root.destroy()))
+            return
         
         # Check return code and log errors
         if return_code != 0 or len(error_list) > 0:
@@ -571,7 +662,7 @@ def scale_video_CPU(input_file, output_file, total_frames, output_text, root,rat
         
         output_text.insert(tk.END, f"\n✅ CPU encoding completed successfully!\n")
         output_text.see(tk.END)
-        root.after(1000, lambda: (messagebox.showinfo("Done", "✅ All videos have been processed!"), root.destroy()))
+        root.after(SUCCESS_MESSAGE_DELAY, lambda: (messagebox.showinfo("Done", "✅ All videos have been processed!"), root.destroy()))
 
     except FileNotFoundError:
         error_list.append("FFmpeg not found! Make sure it's installed and added to PATH.")
@@ -586,7 +677,21 @@ def scale_video_CPU(input_file, output_file, total_frames, output_text, root,rat
         output_text.see(tk.END)
         root.after(100, lambda: messagebox.showerror("Encoding Error", f"CPU encoding exception:\n{str(e)}"))
 
-def scale_video_GPU(input_file, output_file, total_frames, output_text, root,ratio=False, xaxis="1280", yaxis="720",crf="26",preset="medium"):
+def scale_video_GPU(input_file, output_file, total_frames, output_text, root, ratio=False, xaxis=str(HD_WIDTH), yaxis=str(HD_HEIGHT), crf=DEFAULT_CRF, preset=DEFAULT_PRESET):
+    global _current_process, _cancel_requested
+    
+    # Reset cancel flag
+    _cancel_requested = False
+    # Sanitize file paths
+    input_file = sanitize_path(input_file)
+    if input_file is None:
+        output_text.insert(tk.END, f"\n❌ Error: Invalid input file path\n")
+        output_text.see(tk.END)
+        return
+    
+    output_file = sanitize_path(os.path.dirname(output_file)) or os.path.dirname(output_file)
+    output_file = os.path.join(output_file, os.path.basename(output_file))
+    
     # Map CPU presets to NVENC-compatible presets
     nvenc_preset_map = {
         "superfast": "fast",
@@ -599,7 +704,14 @@ def scale_video_GPU(input_file, output_file, total_frames, output_text, root,rat
     
     # Convert CRF to CQ (NVENC uses -cq instead of -crf)
     # NVENC CQ range is typically 0-51, similar to CRF
-    cq_value = crf
+    try:
+        cq_value = str(int(crf))
+        if not (0 <= int(cq_value) <= 51):
+            logger.warning(f"CQ value {cq_value} out of range, using 26")
+            cq_value = DEFAULT_CRF
+    except ValueError:
+        logger.warning(f"Invalid CQ value {crf}, using 26")
+        cq_value = "26"
 
     if ratio:   #   if True vertical
         # Simplified approach: CPU decoding/scaling, GPU encoding
@@ -608,12 +720,12 @@ def scale_video_GPU(input_file, output_file, total_frames, output_text, root,rat
             "ffmpeg",
             "-i", input_file,
             "-vf", f"scale={yaxis}:{xaxis}",
-            "-c:v", "h264_nvenc",
+            "-c:v", GPU_CODEC,
             "-preset", nvenc_preset,
             "-rc", "vbr",
             "-cq", cq_value,
-            "-c:a", "aac",
-            "-b:a", "128k",
+            "-c:a", DEFAULT_AUDIO_CODEC,
+            "-b:a", DEFAULT_AUDIO_BITRATE,
             "-pix_fmt", "yuv420p",
             "-progress", "pipe:1",
             "-nostats",
@@ -624,12 +736,12 @@ def scale_video_GPU(input_file, output_file, total_frames, output_text, root,rat
             "ffmpeg",
             "-i", input_file,
             "-vf", f"scale={xaxis}:{yaxis}",
-            "-c:v", "h264_nvenc",
+            "-c:v", GPU_CODEC,
             "-preset", nvenc_preset,
             "-rc", "vbr",
             "-cq", cq_value,
-            "-c:a", "aac",
-            "-b:a", "128k",
+            "-c:a", DEFAULT_AUDIO_CODEC,
+            "-b:a", DEFAULT_AUDIO_BITRATE,
             "-pix_fmt", "yuv420p",
             "-progress", "pipe:1",
             "-nostats",
@@ -641,6 +753,7 @@ def scale_video_GPU(input_file, output_file, total_frames, output_text, root,rat
 
     try:
         process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+        _current_process = process
 
         output_text.insert(tk.END, "🚀 Starting FFmpeg with GPU acceleration (NVENC)...\n")
         output_text.see(tk.END)
@@ -652,6 +765,25 @@ def scale_video_GPU(input_file, output_file, total_frames, output_text, root,rat
 
         # Process FFmpeg output and track progress
         return_code, error_list = process_ffmpeg_output(process, output_text, progress_line_index, total_frames, error_list, input_file)
+        
+        # Clear process reference
+        _current_process = None
+        
+        # Handle cancellation
+        if _cancel_requested or return_code == -1:
+            # Clean up partial output file
+            if os.path.exists(output_file):
+                try:
+                    os.remove(output_file)
+                    logger.info(f"Removed partial output file: {output_file}")
+                    output_text.insert(tk.END, f"\n🗑️ Partial output file removed.\n")
+                except Exception as e:
+                    logger.warning(f"Could not remove partial file: {e}")
+            output_text.insert(tk.END, f"\n⚠️ Operation cancelled by user.\n")
+            output_text.see(tk.END)
+            # Close window after showing cancellation message
+            root.after(CANCELLATION_MESSAGE_DELAY, lambda: (messagebox.showinfo("Cancelled", "Operation was cancelled."), root.destroy()))
+            return
         
         # Check for NVENC DLL loading errors specifically
         nvenc_dll_error = any("Cannot load nvEncodeAPI64.dll" in err or "nvEncodeAPI" in err for err in error_list)
@@ -717,7 +849,7 @@ def scale_video_GPU(input_file, output_file, total_frames, output_text, root,rat
         
         output_text.insert(tk.END, f"\n✅ GPU encoding completed successfully!\n")
         output_text.see(tk.END)
-        root.after(1000, lambda: (messagebox.showinfo("Done", "✅ All videos have been processed!"), root.destroy()))
+        root.after(SUCCESS_MESSAGE_DELAY, lambda: (messagebox.showinfo("Done", "✅ All videos have been processed!"), root.destroy()))
 
     except FileNotFoundError:
         error_list.append("FFmpeg not found! Make sure it's installed and added to PATH.")
@@ -743,7 +875,7 @@ def run_scaling(input_file, output_file, total_frames, output_text, window, rati
 
 
 def select_video(output_text, window,windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332'):
-    global WINBOLL
+    global WINBOOL
 
     """Opens file dialog and starts video scaling."""
     file_path = filedialog.askopenfilename(
@@ -757,13 +889,23 @@ def select_video(output_text, window,windowBg = '#1e1e1e', buttonBg = '#323232',
         threads = cpu_cores if use_all_cores else 0  # 0 = FFmpeg default (auto)
         
         ratio = get_ratio(window,windowBg, buttonBg, activeButtonBg)
-        #ratio= [True,'hozi']
-        #print(ratio)
-        #pixel = get_pixel(window,windowBg, buttonBg, activeButtonBg)
-        #pixel = [1280,720]
         now = datetime.now()
-        output_path = os.path.splitext(file_path)[0]
-        output_path = f"{output_path.split('_')[0]}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
+        
+        # Ask user for output folder
+        output_folder = filedialog.askdirectory(
+            title="Select Output Folder (or Cancel to use same folder as input)",
+            initialdir=os.path.dirname(file_path)
+        )
+        
+        if output_folder:
+            # Use selected output folder
+            input_filename = os.path.splitext(os.path.basename(file_path))[0]
+            output_path = os.path.join(output_folder, f"{input_filename.split('_')[0]}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime('%Y%m%d_%H%M%S')}.mp4")
+        else:
+            # Use same folder as input
+            output_path = os.path.splitext(file_path)[0]
+            output_path = f"{output_path.split('_')[0]}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
+        
         total_frames = get_total_frames(file_path)
         
         # Display settings info
@@ -784,38 +926,39 @@ def select_video(output_text, window,windowBg = '#1e1e1e', buttonBg = '#323232',
             run_scaling(file_path, output_path, total_frames, output_text, window, ratio[0], ratio[2], ratio[3], ratio[4], ratio[5], use_gpu, threads)
         output_text.see(tk.END)
     else:
-        WINBOLL = False
+        WINBOOL = False
 
+
+def cancel_operation():
+    """Cancel the current video processing operation."""
+    global _current_process, _cancel_requested
+    _cancel_requested = True
+    if _current_process:
+        try:
+            _current_process.terminate()
+            logger.info("FFmpeg process terminated by user")
+        except Exception as e:
+            logger.error(f"Error terminating process: {e}")
 
 def main(windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332'):
     """Creates the Tkinter window."""
     window = tk.Tk()
     window.configure(bg=windowBg)
-    window.title("Video Scaler")
+    window.title(DEFAULT_WINDOW_TITLE)
     window.iconify()
-
-    # Create a BooleanVar to store the state of the GPU flag
-    '''gpu_flag_var = tk.BooleanVar()
-    gpu_flag_var.set(False)  # Set the initial state to False
-
-    # Initialize gpu_flag with the BooleanVar's value
-    gpu_flag = gpu_flag_var.get()'''
 
     output_text = tk.Text(window, height=20, width=100, bg=buttonBg, fg="white")
     output_text.pack(pady=10)
-
-    # Create the Checkbutton for GPU usage
-    '''gpu_checkbox = tk.Checkbutton(window,
-                                  text="Use GPU",
-                                  variable=gpu_flag_var,
-                                  bg=windowBg,
-                                  fg="white",
-                                  selectcolor=activeButtonBg)  # Color when checked
-    gpu_checkbox.pack(pady=10)'''
+    
+    # Add cancel button
+    cancel_button = tk.Button(window, text="❌ Cancel Operation", command=cancel_operation, 
+                              bg=CANCEL_BUTTON_BG, fg="white", font=("Arial", "10", "bold"),
+                              activebackground=CANCEL_BUTTON_ACTIVE_BG, activeforeground="white", borderwidth=2)
+    cancel_button.pack(pady=5)
 
     select_video(output_text, window,windowBg, buttonBg, activeButtonBg)
 
-    if WINBOLL:
+    if WINBOOL:
         window.deiconify()
         window.mainloop()
         messagebox.showinfo("Done", "✅ All videos have been processed!")

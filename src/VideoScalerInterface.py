@@ -1,9 +1,9 @@
 import tkinter as tk
 from tkinter import messagebox
 
-import modles.VideoScaler as VideoScaler
-import modles.ProcessFolder as ProcessFolder
-import modles.JoinFiles as JoinFiles
+import models.VideoScaler as VideoScaler
+import models.ProcessFolder as ProcessFolder
+import models.JoinFiles as JoinFiles
 
 def get_rgb(rgb):
     """translates an rgb tuple of int to a tkinter friendly color code
