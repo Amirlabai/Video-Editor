@@ -74,3 +74,7 @@ SUCCESS_MESSAGE_DELAY = 1000  # milliseconds
 LOG_DIR_NAME = ".video_editor"
 LOG_FILENAME = "video_editor.log"
 
+# Configuration
+CONFIG_DIR_NAME = ".video_editor"
+CONFIG_FILENAME = "config.json"
+

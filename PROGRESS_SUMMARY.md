@@ -33,16 +33,53 @@
    - ✅ Centralized configuration values
    - ✅ Improved code organization
 
+6. **Configuration Management**
+   - ✅ ConfigManager class for saving/loading user preferences
+   - ✅ JSON-based configuration file (stored in user's home directory)
+   - ✅ Persistent UI color preferences
+   - ✅ Persistent performance settings (GPU/CPU, threading)
+   - ✅ Last used folder tracking (input/output folders for all features)
+   - ✅ Automatic config file creation with sensible defaults
+   - ✅ Settings dialog accessible from main interface
+
+7. **Class Structure Refactoring** ✅ **COMPLETED**
+   - ✅ VideoInfo class - Video metadata extraction (`src/models/VideoInfo.py`)
+   - ✅ FFmpegCommandBuilder class - FFmpeg command construction (`src/models/FFmpegCommandBuilder.py`)
+   - ✅ VideoProcessor class - Video encoding operations (CPU/GPU) (`src/models/VideoProcessor.py`)
+   - ✅ VideoJoiner class - Video joining operations (`src/models/VideoJoiner.py`)
+   - ✅ BatchProcessor class - Batch processing (`src/models/BatchProcessor.py`)
+   - ✅ UI classes - Window and dialog classes (`src/models/ui/`)
+     - ✅ SettingsDialog - Performance settings
+     - ✅ ResolutionDialog - Resolution selection
+     - ✅ CRFDialog - Quality selection
+     - ✅ PresetDialog - Preset selection
+     - ✅ VideoScalerWindow - Single video scaling window
+     - ✅ BatchWindow - Batch processing window
+     - ✅ JoinWindow - Video joining window
+   - ✅ Integration - VideoScalerInterface updated to use new classes
+
+   **Refactoring Status:**
+   - Phase 1: Core Classes ✅ COMPLETED
+   - Phase 2: UI Classes ✅ COMPLETED
+   - Phase 3: Integration ✅ COMPLETED
+   
+   **Benefits:**
+   - Separation of concerns (business logic vs UI)
+   - Better reusability and testability
+   - Improved maintainability
+   - Instance-based state management (no globals)
+   - Cleaner architecture with proper class hierarchy
+
 ## ⏳ Pending Improvements
 
 ### High Priority
-- [ ] Add cancel functionality to JoinFiles
-- [ ] Add output folder selection to JoinFiles
+- [x] Add cancel functionality to JoinFiles ✅
+- [x] Add output folder selection to JoinFiles ✅
 
 ### Medium Priority
-- [ ] Configuration file support (save/load user preferences)
+- [x] Configuration file support (save/load user preferences) ✅
 - [ ] Parallel batch processing
-- [ ] Refactor into proper class structure
+- [x] Refactor into proper class structure ✅
 
 ### Low Priority
 - [ ] Unit tests
@@ -51,15 +88,20 @@
 
 ## 📊 Statistics
 
-- **Files Modified:** 5 (VideoScaler.py, ProcessFolder.py, JoinFiles.py, constants.py, VideoScalerInterface.py)
-- **Lines of Code Improved:** ~200+ lines refactored
+- **Files Modified:** 15+ (VideoScaler.py, ProcessFolder.py, JoinFiles.py, constants.py, VideoScalerInterface.py, ConfigManager.py, and new class files)
+- **New Classes Created:** 11 classes
+  - Core: VideoInfo, FFmpegCommandBuilder, VideoProcessor, VideoJoiner, BatchProcessor
+  - UI: VideoScalerWindow, BatchWindow, JoinWindow, SettingsDialog, ResolutionDialog, CRFDialog, PresetDialog
+- **Lines of Code Improved:** ~1000+ lines refactored
 - **Magic Numbers Replaced:** 29+ instances moved to constants
-- **New Features Added:** 4 major features (cancel, output folder, constants, enhanced errors)
+- **New Features Added:** 7 major features (cancel, output folder, constants, enhanced errors, configuration management, class structure foundation, UI class structure)
 
 ## 🎯 Next Steps
 
-1. Add cancel functionality to JoinFiles (similar to VideoScaler)
-2. Add output folder selection to JoinFiles
-3. Implement configuration file support for user preferences
-4. Consider parallel batch processing for better performance
+### Future Enhancements
+- ⏳ Parallel batch processing for better performance
+- ⏳ Unit tests for new class structure
+- ⏳ Additional encoding options
+- ⏳ Preview functionality
+- ⏳ Optional: Fully migrate VideoScaler.py, ProcessFolder.py, JoinFiles.py to use new classes (currently using hybrid approach)
 

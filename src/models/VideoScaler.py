@@ -23,6 +23,7 @@ from .constants import (
     DEFAULT_WINDOW_TITLE, CANCELLATION_MESSAGE_DELAY, SUCCESS_MESSAGE_DELAY,
     LOG_DIR_NAME, LOG_FILENAME
 )
+from .ConfigManager import get_config_manager
 
 WINBOOL = True
 
@@ -254,17 +255,22 @@ def get_cpu_cores():
 
 def get_performance_settings(root, windowBg='#1e1e1e', buttonBg='#323232', activeButtonBg='#192332'):
     """Dialog to get performance settings: threading and GPU usage."""
+    config = get_config_manager()
+    default_use_gpu, default_use_all_cores = config.get_performance_settings()
+    
     perf_window = tk.Toplevel(root)
     perf_window.configure(bg=windowBg)
     perf_window.title("Performance Settings")
     perf_window.grab_set()
     
-    use_gpu = tk.BooleanVar(perf_window, value=False)
-    use_all_cores = tk.BooleanVar(perf_window, value=False)
+    use_gpu = tk.BooleanVar(perf_window, value=default_use_gpu)
+    use_all_cores = tk.BooleanVar(perf_window, value=default_use_all_cores)
     gpu_available = check_gpu_compatibility()
     cpu_cores = get_cpu_cores()
     
     def confirm_settings():
+        # Save settings to config
+        config.set_performance_settings(use_gpu.get(), use_all_cores.get())
         perf_window.destroy()
     
     # GPU option
@@ -878,12 +884,19 @@ def select_video(output_text, window,windowBg = '#1e1e1e', buttonBg = '#323232',
     global WINBOOL
 
     """Opens file dialog and starts video scaling."""
+    config = get_config_manager()
+    last_input_folder = config.get_last_input_folder()
+    
     file_path = filedialog.askopenfilename(
         title="Select a Video File",
-        filetypes=[("Video Files", "*.mp4;*.mkv;*.avi;*.mov;*.flv;*.wmv")]
+        filetypes=[("Video Files", "*.mp4;*.mkv;*.avi;*.mov;*.flv;*.wmv")],
+        initialdir=last_input_folder if last_input_folder and os.path.exists(last_input_folder) else None
     )
 
     if file_path:
+        # Save input folder
+        config.set_last_input_folder(os.path.dirname(file_path))
+        
         # Get performance settings first
         use_gpu, use_all_cores, cpu_cores = get_performance_settings(window, windowBg, buttonBg, activeButtonBg)
         threads = cpu_cores if use_all_cores else 0  # 0 = FFmpeg default (auto)
@@ -892,10 +905,15 @@ def select_video(output_text, window,windowBg = '#1e1e1e', buttonBg = '#323232',
         now = datetime.now()
         
         # Ask user for output folder
+        last_output_folder = config.get_last_output_folder()
         output_folder = filedialog.askdirectory(
             title="Select Output Folder (or Cancel to use same folder as input)",
-            initialdir=os.path.dirname(file_path)
+            initialdir=last_output_folder if last_output_folder and os.path.exists(last_output_folder) else os.path.dirname(file_path)
         )
+        
+        # Save output folder if selected
+        if output_folder:
+            config.set_last_output_folder(output_folder)
         
         if output_folder:
             # Use selected output folder

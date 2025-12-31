@@ -5,10 +5,20 @@ from tkinter import filedialog, messagebox
 from threading import Thread
 import time
 import re
-from .constants import SUPPORTED_VIDEO_FORMATS, JOINED_OUTPUT_FILENAME, CONCAT_LIST_FILENAME, DEFAULT_WINDOW_BG, DEFAULT_BUTTON_BG, DEFAULT_ACTIVE_BUTTON_BG
+from .constants import (
+    SUPPORTED_VIDEO_FORMATS, JOINED_OUTPUT_FILENAME, CONCAT_LIST_FILENAME,
+    DEFAULT_WINDOW_BG, DEFAULT_BUTTON_BG, DEFAULT_ACTIVE_BUTTON_BG,
+    CANCEL_BUTTON_BG, CANCEL_BUTTON_ACTIVE_BG, CANCELLATION_MESSAGE_DELAY,
+    PROCESS_TERMINATION_TIMEOUT, JOINER_WINDOW_TITLE
+)
+from .ConfigManager import get_config_manager
 
 
 WINBOOL = True
+
+# Global variables for cancel functionality
+_current_process = None
+_cancel_requested = False
 
 
 def get_video_info(video_path):
@@ -74,6 +84,11 @@ def average_list(myList):
 
 
 def join_videos(concat_file, output_file, total_files, output_text, root):
+    global _current_process, _cancel_requested
+    
+    # Reset cancel flag
+    _cancel_requested = False
+    
     ffmpeg_cmd = [
         "ffmpeg", "-f", "concat", "-safe", "0", "-i", concat_file,
         "-c", "copy", "-progress", "pipe:1", "-nostats", output_file
@@ -81,6 +96,7 @@ def join_videos(concat_file, output_file, total_files, output_text, root):
 
     try:
         process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+        _current_process = process
 
         output_text.insert(tk.END, "\n🚀 Starting FFmpeg to join videos...\n")
         output_text.see(tk.END)
@@ -94,6 +110,27 @@ def join_videos(concat_file, output_file, total_files, output_text, root):
         i = 0
 
         for line in process.stdout:
+            # Check for cancellation
+            if _cancel_requested:
+                process.terminate()
+                try:
+                    process.wait(timeout=PROCESS_TERMINATION_TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                output_text.insert(tk.END, "\n⚠️ Operation cancelled by user\n")
+                output_text.see(tk.END)
+                _current_process = None
+                # Clean up partial output file
+                if os.path.exists(output_file):
+                    try:
+                        os.remove(output_file)
+                        output_text.insert(tk.END, f"\n🗑️ Partial output file removed.\n")
+                    except Exception as e:
+                        pass
+                # Close window after showing cancellation message
+                root.after(CANCELLATION_MESSAGE_DELAY, lambda: (messagebox.showinfo("Cancelled", "Operation was cancelled."), root.destroy()))
+                return
+            
             match = re.search(r"frame=\s*(\d+)", line)
             if match:
                 now = time.perf_counter()
@@ -110,6 +147,10 @@ def join_videos(concat_file, output_file, total_files, output_text, root):
                 output_text.see(tk.END)
 
         process.wait()
+        _current_process = None
+
+        if _cancel_requested:
+            return
 
         if process.returncode == 0:
             output_text.insert(tk.END, f"\n✅ Successfully joined videos into: {output_file}\n")
@@ -120,10 +161,15 @@ def join_videos(concat_file, output_file, total_files, output_text, root):
         root.after(1000, lambda: (messagebox.showinfo("Done", "✅ All videos have been joined!"), root.destroy()))
 
     except FileNotFoundError:
+        _current_process = None
         messagebox.showerror("Error", "FFmpeg not found! Make sure it's installed and added to PATH.")
+    except Exception as e:
+        _current_process = None
+        output_text.insert(tk.END, f"\n❌ Error: {str(e)}\n")
+        output_text.see(tk.END)
 
 
-def process_folder(folder_path, output_text, root):
+def process_folder(folder_path, output_text, root, output_folder=None):
     video_files = sorted([
         os.path.join(folder_path, f).replace("\\", "/")
         for f in os.listdir(folder_path)
@@ -143,30 +189,81 @@ def process_folder(folder_path, output_text, root):
         return
 
     concat_file = create_concat_file(video_files, folder_path)
-    output_file = os.path.join(folder_path, JOINED_OUTPUT_FILENAME).replace("\\", "/")
+    
+    # Use output_folder if provided, otherwise use input folder
+    if output_folder:
+        output_file = os.path.join(output_folder, JOINED_OUTPUT_FILENAME).replace("\\", "/")
+    else:
+        output_file = os.path.join(folder_path, JOINED_OUTPUT_FILENAME).replace("\\", "/")
 
     join_videos(concat_file, output_file, total_files, output_text, root)
 
 
 def select_folder(output_text, root):
     global WINBOOL
-    folder_path = filedialog.askdirectory(title="Select a Folder Containing Videos")
+    config = get_config_manager()
+    last_join_input_folder = config.get_last_join_input_folder()
+    
+    root.iconify()
+    folder_path = filedialog.askdirectory(
+        title="Select a Folder Containing Videos",
+        initialdir=last_join_input_folder if last_join_input_folder and os.path.exists(last_join_input_folder) else None
+    )
+    root.deiconify()
+    
     if folder_path:
+        # Save input folder
+        config.set_last_join_input_folder(folder_path)
+        
+        # Ask for output folder
+        last_join_output_folder = config.get_last_join_output_folder()
+        root.iconify()
+        output_folder = filedialog.askdirectory(
+            title="Select Output Folder (or Cancel to use same folder as input)",
+            initialdir=last_join_output_folder if last_join_output_folder and os.path.exists(last_join_output_folder) else folder_path
+        )
+        root.deiconify()
+        
+        # Save output folder if selected
+        if output_folder:
+            config.set_last_join_output_folder(output_folder)
+        
         output_text.insert(tk.END, f"📁 Selected folder: {folder_path}\n")
+        if output_folder:
+            output_text.insert(tk.END, f"📂 Output folder: {output_folder}\n")
+        else:
+            output_text.insert(tk.END, f"📂 Output folder: Same as input\n")
         output_text.see(tk.END)
-        Thread(target=process_folder, args=(folder_path, output_text, root)).start()
+        Thread(target=process_folder, args=(folder_path, output_text, root, output_folder)).start()
     else:
         WINBOOL = False
+
+
+def cancel_operation():
+    """Cancel the current video joining operation."""
+    global _current_process, _cancel_requested
+    _cancel_requested = True
+    if _current_process:
+        try:
+            _current_process.terminate()
+        except Exception as e:
+            pass
 
 
 def main(windowBg = '#1e1e1e', buttonBg = '#323232', activeButtonBg = '#192332'):
     root = tk.Tk()
     root.configure(bg=windowBg)
-    root.title("Video Joiner")
+    root.title(JOINER_WINDOW_TITLE)
     root.iconify()
 
     output_text = tk.Text(root, height=20, width=80, bg=buttonBg, fg="white")
-    output_text.pack()
+    output_text.pack(pady=10)
+    
+    # Add cancel button
+    cancel_button = tk.Button(root, text="❌ Cancel Operation", command=cancel_operation, 
+                              bg=CANCEL_BUTTON_BG, fg="white", font=("Arial", "10", "bold"),
+                              activebackground=CANCEL_BUTTON_ACTIVE_BG, activeforeground="white", borderwidth=2)
+    cancel_button.pack(pady=5)
 
     select_folder(output_text, root)
     if WINBOOL:

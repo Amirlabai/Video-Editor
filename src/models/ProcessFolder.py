@@ -8,6 +8,7 @@ import subprocess
 import os
 import re
 from .constants import SUPPORTED_VIDEO_FORMATS, DEFAULT_WINDOW_BG, DEFAULT_BUTTON_BG, DEFAULT_ACTIVE_BUTTON_BG
+from .ConfigManager import get_config_manager
 
 try:
     # Try relative import first (when used as a module)
@@ -88,23 +89,36 @@ def process_videos_in_folder(folder_path, output_text, root, use_gpu=False, thre
 
 def select_folder(output_text, root, windowBg='#1e1e1e', buttonBg='#323232', activeButtonBg='#192332'):
     global WINBOOL
+    config = get_config_manager()
+    last_input_folder = config.get_last_input_folder()
 
     root.iconify()
-    folder_path = filedialog.askdirectory(title="Select a Folder Containing Videos")
+    folder_path = filedialog.askdirectory(
+        title="Select a Folder Containing Videos",
+        initialdir=last_input_folder if last_input_folder and os.path.exists(last_input_folder) else None
+    )
     root.deiconify()
 
     if folder_path:
+        # Save input folder
+        config.set_last_input_folder(folder_path)
+        
         # Get performance settings
         use_gpu, use_all_cores, cpu_cores = get_performance_settings(root, windowBg, buttonBg, activeButtonBg)
         threads = cpu_cores if use_all_cores else 0
         
         # Ask for output folder
+        last_output_folder = config.get_last_output_folder()
         root.iconify()
         output_folder = filedialog.askdirectory(
             title="Select Output Folder (or Cancel to use same folder as input)",
-            initialdir=folder_path
+            initialdir=last_output_folder if last_output_folder and os.path.exists(last_output_folder) else folder_path
         )
         root.deiconify()
+        
+        # Save output folder if selected
+        if output_folder:
+            config.set_last_output_folder(output_folder)
         
         # Display settings info
         encoding_type = "GPU (NVENC)" if use_gpu else "CPU"
