@@ -21,7 +21,10 @@ class FFmpegCommandBuilder:
         yaxis: str = str(HD_HEIGHT),
         crf: str = DEFAULT_CRF,
         preset: str = DEFAULT_PRESET,
-        threads: int = 0
+        threads: int = 0,
+        video_codec: str = CPU_CODEC,
+        audio_codec: str = DEFAULT_AUDIO_CODEC,
+        audio_bitrate: str = DEFAULT_AUDIO_BITRATE
     ) -> List[str]:
         """Build FFmpeg command for CPU-based video scaling.
         
@@ -40,11 +43,11 @@ class FFmpegCommandBuilder:
         cmd = [
             "ffmpeg", "-i", input_file,
             "-vf", f"scale={xaxis}:{yaxis}",
-            "-c:v", CPU_CODEC,
+            "-c:v", video_codec,
             "-crf", crf,
             "-preset", preset,
-            "-c:a", DEFAULT_AUDIO_CODEC,
-            "-b:a", DEFAULT_AUDIO_BITRATE,
+            "-c:a", audio_codec,
+            "-b:a", audio_bitrate,
             "-progress", "pipe:1",
             "-nostats",
             "-y",  # Overwrite output file
@@ -65,7 +68,10 @@ class FFmpegCommandBuilder:
         xaxis: str = str(HD_WIDTH),
         yaxis: str = str(HD_HEIGHT),
         crf: str = DEFAULT_CRF,
-        preset: str = DEFAULT_PRESET
+        preset: str = DEFAULT_PRESET,
+        video_codec: str = GPU_CODEC,
+        audio_codec: str = DEFAULT_AUDIO_CODEC,
+        audio_bitrate: str = DEFAULT_AUDIO_BITRATE
     ) -> List[str]:
         """Build FFmpeg command for GPU-based video scaling (NVENC).
         
@@ -80,15 +86,21 @@ class FFmpegCommandBuilder:
         Returns:
             List of command arguments
         """
+        # Use scale_cuda for NVENC codecs, regular scale for others
+        if "nvenc" in video_codec:
+            scale_filter = f"scale_cuda={xaxis}:{yaxis}"
+        else:
+            scale_filter = f"scale={xaxis}:{yaxis}"
+        
         return [
             "ffmpeg", "-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
             "-i", input_file,
-            "-vf", f"scale_cuda={xaxis}:{yaxis}",
-            "-c:v", GPU_CODEC,
+            "-vf", scale_filter,
+            "-c:v", video_codec,
             "-cq", crf,
             "-preset", preset,
-            "-c:a", DEFAULT_AUDIO_CODEC,
-            "-b:a", DEFAULT_AUDIO_BITRATE,
+            "-c:a", audio_codec,
+            "-b:a", audio_bitrate,
             "-progress", "pipe:1",
             "-nostats",
             "-y",  # Overwrite output file

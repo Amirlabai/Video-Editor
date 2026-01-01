@@ -4,16 +4,7 @@ import os
 import platform
 
 # Use new class-based UI components
-try:
-    from models.ui.Windows import VideoScalerWindow, BatchWindow, JoinWindow
-except ImportError:
-    # Fallback to old imports if new classes aren't available
-    import models.VideoScaler as VideoScaler
-    import models.ProcessFolder as ProcessFolder
-    import models.JoinFiles as JoinFiles
-    VideoScalerWindow = None
-    BatchWindow = None
-    JoinWindow = None
+from models.ui.Windows import VideoScalerWindow, BatchWindow, JoinWindow
 
 from models.ConfigManager import get_config_manager
 
@@ -32,25 +23,16 @@ def window():
         root.quit()
 
     def scale_video():
-        if VideoScalerWindow:
-            window = VideoScalerWindow(windowBg, buttonBg, activeButtonBg)
-            window.run()
-        else:
-            VideoScaler.main(windowBg, buttonBg, activeButtonBg)
+        window = VideoScalerWindow(windowBg, buttonBg, activeButtonBg)
+        window.run()
 
     def batch_scale():
-        if BatchWindow:
-            window = BatchWindow(windowBg, buttonBg, activeButtonBg)
-            window.run()
-        else:
-            ProcessFolder.main(windowBg, buttonBg, activeButtonBg)
+        window = BatchWindow(windowBg, buttonBg, activeButtonBg)
+        window.run()
 
     def join_videos():
-        if JoinWindow:
-            window = JoinWindow(windowBg, buttonBg, activeButtonBg)
-            window.run()
-        else:
-            JoinFiles.main(windowBg, buttonBg, activeButtonBg)
+        window = JoinWindow(windowBg, buttonBg, activeButtonBg)
+        window.run()
 
     def show_settings():
         """Show settings/preferences dialog."""

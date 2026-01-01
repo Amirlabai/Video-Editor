@@ -35,10 +35,14 @@ PRESET_OPTIONS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "mediu
 # Audio Settings
 DEFAULT_AUDIO_CODEC = "aac"
 DEFAULT_AUDIO_BITRATE = "128k"
+AUDIO_CODEC_OPTIONS = ["aac", "mp3", "opus", "vorbis", "copy"]  # copy = no re-encoding
+AUDIO_BITRATE_OPTIONS = ["64k", "96k", "128k", "192k", "256k", "320k"]
 
 # Video Codecs
 CPU_CODEC = "libx264"
+CPU_CODEC_OPTIONS = ["libx264", "libx265", "libvpx-vp9"]  # H.264, H.265/HEVC, VP9
 GPU_CODEC = "h264_nvenc"
+GPU_CODEC_OPTIONS = ["h264_nvenc", "hevc_nvenc"]  # H.264 NVENC, H.265 NVENC
 
 # Supported Video Formats
 SUPPORTED_VIDEO_FORMATS = (".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv")

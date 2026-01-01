@@ -9,6 +9,7 @@ import os
 import logging
 from typing import List, Tuple, Optional, Callable
 from threading import Thread
+from tkinter import messagebox
 
 from .FFmpegCommandBuilder import FFmpegCommandBuilder
 from .constants import (
@@ -228,7 +229,7 @@ class VideoProcessor:
                 output_text.see("end")
                 # Close window after showing cancellation message
                 root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
-                    __import__('tkinter.messagebox').showinfo("Cancelled", "Operation was cancelled."),
+                    messagebox.showinfo("Cancelled", "Operation was cancelled."),
                     root.destroy()
                 ))
                 return
@@ -238,7 +239,7 @@ class VideoProcessor:
             
         except FileNotFoundError:
             self._current_process = None
-            __import__('tkinter.messagebox').showerror(
+            messagebox.showerror(
                 "Error", "FFmpeg not found! Make sure it's installed and added to PATH."
             )
         except Exception as e:
@@ -324,7 +325,7 @@ class VideoProcessor:
                 output_text.see("end")
                 # Close window after showing cancellation message
                 root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
-                    __import__('tkinter.messagebox').showinfo("Cancelled", "Operation was cancelled."),
+                    messagebox.showinfo("Cancelled", "Operation was cancelled."),
                     root.destroy()
                 ))
                 return
@@ -356,7 +357,7 @@ class VideoProcessor:
             
         except FileNotFoundError:
             self._current_process = None
-            __import__('tkinter.messagebox').showerror(
+            messagebox.showerror(
                 "Error", "FFmpeg not found! Make sure it's installed and added to PATH."
             )
         except Exception as e:

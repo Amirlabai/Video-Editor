@@ -14,6 +14,7 @@
    - ✅ Fixed directory name: modles → models
    - ✅ Removed all dead/commented code blocks
    - ✅ Created constants file (`src/models/constants.py`)
+   - ✅ Fixed messagebox import error (replaced incorrect `__import__` usage)
 
 3. **Security & Error Handling**
    - ✅ Added path sanitization using `os.path.abspath()` and `os.path.normpath()`
@@ -26,6 +27,7 @@
    - ✅ Output folder selection (single video and batch processing)
    - ✅ Performance settings dialog (GPU/CPU, threading options)
    - ✅ Enhanced progress tracking with time estimates
+   - ✅ UI responsiveness - Video processing runs in background threads (window stays responsive)
 
 5. **Architecture**
    - ✅ Proper logging system (replaces print statements)
@@ -53,10 +55,12 @@
      - ✅ ResolutionDialog - Resolution selection
      - ✅ CRFDialog - Quality selection
      - ✅ PresetDialog - Preset selection
+     - ✅ EncodingSettingsDialog - Combined encoding settings (replaces get_ratio)
      - ✅ VideoScalerWindow - Single video scaling window
      - ✅ BatchWindow - Batch processing window
      - ✅ JoinWindow - Video joining window
    - ✅ Integration - VideoScalerInterface updated to use new classes
+   - ✅ Migration Complete - Old modules (VideoScaler.py, ProcessFolder.py, JoinFiles.py) deleted
 
    **Refactoring Status:**
    - Phase 1: Core Classes ✅ COMPLETED
@@ -82,16 +86,16 @@
 - [x] Refactor into proper class structure ✅
 
 ### Low Priority
-- [ ] Unit tests
-- [ ] Additional encoding options
-- [ ] Preview functionality
+- [x] Unit tests ✅
+- [x] Additional encoding options ✅
+- [x] Preview functionality ✅
 
 ## 📊 Statistics
 
 - **Files Modified:** 15+ (VideoScaler.py, ProcessFolder.py, JoinFiles.py, constants.py, VideoScalerInterface.py, ConfigManager.py, and new class files)
-- **New Classes Created:** 11 classes
+- **New Classes Created:** 16 classes
   - Core: VideoInfo, FFmpegCommandBuilder, VideoProcessor, VideoJoiner, BatchProcessor
-  - UI: VideoScalerWindow, BatchWindow, JoinWindow, SettingsDialog, ResolutionDialog, CRFDialog, PresetDialog
+  - UI: VideoScalerWindow, BatchWindow, JoinWindow, SettingsDialog, ResolutionDialog, CRFDialog, PresetDialog, EncodingSettingsDialog, AudioCodecDialog, AudioBitrateDialog, VideoCodecDialog, PreviewWindow
 - **Lines of Code Improved:** ~1000+ lines refactored
 - **Magic Numbers Replaced:** 29+ instances moved to constants
 - **New Features Added:** 7 major features (cancel, output folder, constants, enhanced errors, configuration management, class structure foundation, UI class structure)
@@ -100,8 +104,38 @@
 
 ### Future Enhancements
 - ⏳ Parallel batch processing for better performance
-- ⏳ Unit tests for new class structure
-- ⏳ Additional encoding options
-- ⏳ Preview functionality
-- ⏳ Optional: Fully migrate VideoScaler.py, ProcessFolder.py, JoinFiles.py to use new classes (currently using hybrid approach)
+- ⏳ Integration of advanced encoding options into main UI (audio/video codec selection)
+- ⏳ Enhanced preview with thumbnail generation
+- ⏳ Two-pass encoding option
+- ⏳ Bitrate control option (alternative to CRF)
+
+### Migration Status ✅ **COMPLETED**
+- ✅ New class-based UI is the only implementation (no fallbacks)
+- ✅ `get_ratio()` replaced with `EncodingSettingsDialog` class
+- ✅ Old modules (VideoScaler.py, ProcessFolder.py, JoinFiles.py) **DELETED**
+- ✅ All functionality migrated to new class structure:
+  - VideoScaler → VideoScalerWindow + VideoProcessor
+  - ProcessFolder → BatchWindow + BatchProcessor
+  - JoinFiles → JoinWindow + VideoJoiner
+  - Dialog functions → Dialog classes (ResolutionDialog, CRFDialog, PresetDialog, EncodingSettingsDialog)
+
+### Recent Bug Fixes ✅
+- ✅ Fixed UI freezing issue - Video processing now runs in background threads
+- ✅ Fixed messagebox import error - Corrected `__import__('tkinter.messagebox')` usage
+
+### New Features Added ✅
+- ✅ **Unit Tests** - Comprehensive test suite with tests for:
+  - VideoInfo (metadata extraction, compatibility checking)
+  - FFmpegCommandBuilder (command construction)
+  - ConfigManager (configuration management)
+  - Constants validation
+- ✅ **Additional Encoding Options** - New dialog classes for:
+  - Audio codec selection (AAC, MP3, Opus, Vorbis, Copy)
+  - Audio bitrate selection (64k-320k)
+  - Video codec selection (H.264, H.265/HEVC, VP9 for CPU; H.264/H.265 NVENC for GPU)
+  - Updated FFmpegCommandBuilder to support custom codecs and bitrates
+- ✅ **Preview Functionality** - PreviewWindow class that displays:
+  - Video file information (codec, resolution, framerate, total frames)
+  - Encoding settings preview (resolution, quality, preset, codecs)
+  - Settings summary before encoding
 

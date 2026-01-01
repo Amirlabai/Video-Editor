@@ -19,7 +19,7 @@ from ..constants import (
     CANCEL_BUTTON_BG, CANCEL_BUTTON_ACTIVE_BG, CANCELLATION_MESSAGE_DELAY,
     DEFAULT_WINDOW_TITLE, BATCH_WINDOW_TITLE, JOINER_WINDOW_TITLE
 )
-from .Dialogs import SettingsDialog, ResolutionDialog, CRFDialog, PresetDialog
+from .Dialogs import SettingsDialog, ResolutionDialog, CRFDialog, PresetDialog, EncodingSettingsDialog
 
 
 class VideoScalerWindow:
@@ -83,10 +83,10 @@ class VideoScalerWindow:
             )
             threads = cpu_cores if use_all_cores else 0
             
-            # Get encoding settings (simplified - using dialogs from VideoScaler for now)
-            # For full integration, these would use the new dialog classes
-            from ..VideoScaler import get_ratio
-            ratio = get_ratio(self.window, self.window_bg, self.button_bg, self.active_button_bg)
+            # Get encoding settings using new dialog class
+            ratio = EncodingSettingsDialog.show(
+                self.window, self.window_bg, self.button_bg, self.active_button_bg
+            )
             
             now = datetime.now()
             
@@ -124,17 +124,17 @@ class VideoScalerWindow:
                 self.output_text.insert("end", f"📂 Selected file: {file_path}\n")
                 self.output_text.insert("end", f"📁 Output file: {output_path}\n")
             
-            # Process video
+            # Process video in background thread to keep UI responsive
             if use_gpu:
-                self.processor.scale_video_gpu(
+                Thread(target=self.processor.scale_video_gpu, args=(
                     file_path, output_path, total_frames, self.output_text, self.window,
                     ratio[0], ratio[2], ratio[3], ratio[4], ratio[5]
-                )
+                )).start()
             else:
-                self.processor.scale_video_cpu(
+                Thread(target=self.processor.scale_video_cpu, args=(
                     file_path, output_path, total_frames, self.output_text, self.window,
                     ratio[0], ratio[2], ratio[3], ratio[4], ratio[5], threads
-                )
+                )).start()
         else:
             self.winbool = False
     
@@ -207,9 +207,10 @@ class BatchWindow:
             if output_folder:
                 self.config.set_last_output_folder(output_folder)
             
-            # Get encoding settings
-            from ..VideoScaler import get_ratio
-            ratio = get_ratio(self.window, self.window_bg, self.button_bg, self.active_button_bg)
+            # Get encoding settings using new dialog class
+            ratio = EncodingSettingsDialog.show(
+                self.window, self.window_bg, self.button_bg, self.active_button_bg
+            )
             
             # Display settings
             encoding_type = "GPU (NVENC)" if use_gpu else "CPU"
