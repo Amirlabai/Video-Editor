@@ -25,8 +25,8 @@ class SettingsDialog:
         window_bg: str = '#1e1e1e',
         button_bg: str = '#323232',
         active_button_bg: str = '#192332',
-        video_path: Optional[str] = None
-    ) -> Tuple[bool, bool, int, Optional[float], bool]:
+        video_info: Optional[VideoInfo] = None
+    ) -> VideoInfo:
         """Show performance settings dialog.
         
         Args:
@@ -34,12 +34,10 @@ class SettingsDialog:
             window_bg: Window background color
             button_bg: Button background color
             active_button_bg: Active button background color
-            video_path: Optional path to video file to extract FPS and size
+            video_info: Optional VideoInfo object (will be modified with user selections)
             
         Returns:
-            Tuple of (use_gpu, use_all_cores, cpu_cores, target_fps, cap_cpu_50)
-            - target_fps: None to keep current, or float value (12, 24, 30)
-            - cap_cpu_50: True to cap CPU usage at 50%
+            VideoInfo object with all user selections stored in it
         """
         config = get_config_manager()
         default_use_gpu, default_use_all_cores = config.get_performance_settings()
@@ -56,41 +54,39 @@ class SettingsDialog:
         gpu_available = SettingsDialog._check_gpu_compatibility()
         cpu_cores = multiprocessing.cpu_count()
         
-        # Video info variables
-        current_fps = None
-        video_width = None
-        video_height = None
-        target_fps = [None]  # Use list to allow modification in nested functions
-        
-        # Extract video info if video path provided
-        if video_path:
+        # Initialize video_info if not provided
+        if video_info is None:
             video_info = VideoInfo()
-            fps_info = video_info.get_fps_and_size(video_path)
-            if fps_info:
-                current_fps, video_width, video_height = fps_info
         
         def confirm_settings():
+            # Store settings in video_info object
+            video_info.use_gpu = use_gpu.get()
+            video_info.use_all_cores = use_all_cores.get()
+            video_info.cap_cpu_50 = cap_cpu_50.get()
+            video_info.cpu_cores = cpu_cores  # Store system CPU count
+            
+            # Save to config
             config.set_performance_settings(use_gpu.get(), use_all_cores.get(), cap_cpu_50.get())
-            if target_fps[0] is not None:
-                config.set_target_fps(target_fps[0])
+            if video_info.target_fps is not None:
+                config.set_target_fps(video_info.target_fps)
             perf_window.destroy()
         
         row = 0
         
         # Video info display
-        if video_path and current_fps is not None:
+        if video_info.fps is not None:
             video_info_frame = tk.Frame(perf_window, bg=window_bg, relief=tk.RAISED, borderwidth=2)
             video_info_frame.grid(row=row, column=0, columnspan=2, pady=10, padx=10, sticky="ew")
             
-            video_info_label = tk.Label(video_info_frame, text="📹 Video Information", 
+            video_info_label = tk.Label(video_info_frame, text="Video Information", 
                                        bg=window_bg, fg="white", font=("Arial", "12", "bold"))
             video_info_label.pack(pady=5)
             
-            fps_label = tk.Label(video_info_frame, text=f"Current FPS: {current_fps:.2f}", 
+            fps_label = tk.Label(video_info_frame, text=f"Current FPS: {video_info.fps:.2f}", 
                                 bg=window_bg, fg="white", font=("Arial", "10"))
             fps_label.pack(pady=2)
             
-            size_label = tk.Label(video_info_frame, text=f"Video Size: {video_width}x{video_height}", 
+            size_label = tk.Label(video_info_frame, text=f"Video Size: {video_info.width}x{video_info.height}", 
                                  bg=window_bg, fg="white", font=("Arial", "10"))
             size_label.pack(pady=2)
             
@@ -116,24 +112,24 @@ class SettingsDialog:
             fps_buttons = []
             
             def set_fps(fps: Optional[float], selected_button: tk.Button):
-                target_fps[0] = fps
+                video_info.target_fps = fps
                 # Update button states - reset all, then highlight selected
                 for btn in fps_buttons:
                     btn.config(relief=tk.RAISED)
                 selected_button.config(relief=tk.SUNKEN)
             
             # Keep current FPS button
-            keep_current_btn = tk.Button(fps_buttons_frame, text=f"Keep Current ({current_fps:.2f} fps)", 
+            keep_current_btn = tk.Button(fps_buttons_frame, text=f"Keep Current ({video_info.fps:.2f} fps)", 
                                        command=lambda: set_fps(None, keep_current_btn),
                                        bg=button_bg, fg="white", font=("Arial", "9", "bold"),
                                        activebackground=active_button_bg, activeforeground="white", 
                                        borderwidth=2, relief=tk.SUNKEN)
             keep_current_btn.pack(side="left", padx=2)
             fps_buttons.append(keep_current_btn)
-            target_fps[0] = None  # Default to keep current
+            video_info.target_fps = None  # Default to keep current
             
             # Only show lower FPS options if current FPS is higher
-            if current_fps > 30:
+            if video_info.fps > 30:
                 fps_30_btn = tk.Button(fps_buttons_frame, text="30 fps", 
                                       command=lambda: set_fps(30.0, fps_30_btn),
                                       bg=button_bg, fg="white", font=("Arial", "9", "bold"),
@@ -142,7 +138,7 @@ class SettingsDialog:
                 fps_30_btn.pack(side="left", padx=2)
                 fps_buttons.append(fps_30_btn)
             
-            if current_fps > 24:
+            if video_info.fps > 24:
                 fps_24_btn = tk.Button(fps_buttons_frame, text="24 fps", 
                                       command=lambda: set_fps(24.0, fps_24_btn),
                                       bg=button_bg, fg="white", font=("Arial", "9", "bold"),
@@ -151,7 +147,7 @@ class SettingsDialog:
                 fps_24_btn.pack(side="left", padx=2)
                 fps_buttons.append(fps_24_btn)
             
-            if current_fps > 12:
+            if video_info.fps > 12:
                 fps_12_btn = tk.Button(fps_buttons_frame, text="12 fps", 
                                       command=lambda: set_fps(12.0, fps_12_btn),
                                       bg=button_bg, fg="white", font=("Arial", "9", "bold"),
@@ -222,7 +218,11 @@ class SettingsDialog:
         
         perf_window.wait_window()
         
-        return use_gpu.get(), use_all_cores.get(), cpu_cores, target_fps[0], cap_cpu_50.get()
+        # Store CPU cores in object before returning (in case dialog was closed without confirming)
+        if video_info.cpu_cores is None:
+            video_info.cpu_cores = cpu_cores
+        
+        return video_info
     
     @staticmethod
     def _check_gpu_compatibility() -> bool:
@@ -244,7 +244,7 @@ class ResolutionDialog:
         window_bg: str = '#1e1e1e',
         button_bg: str = '#323232',
         active_button_bg: str = '#192332',
-        video_path: Optional[str] = None,
+        video_info: Optional[VideoInfo] = None,
         is_vertical: bool = False
     ) -> Tuple[str, str]:
         """Show resolution selection dialog.
@@ -254,7 +254,7 @@ class ResolutionDialog:
             window_bg: Window background color
             button_bg: Button background color
             active_button_bg: Active button background color
-            video_path: Optional path to video file to extract default dimensions
+            video_info: Optional VideoInfo object to get default dimensions from
             is_vertical: Whether this is for vertical orientation (will flip dimensions on return)
             
         Returns:
@@ -266,14 +266,12 @@ class ResolutionDialog:
         res_window.title("Video Resolution")
         res_window.grab_set()
         
-        # Extract video dimensions if video path provided
+        # Get video dimensions from video_info if provided
         default_width = None
         default_height = None
-        if video_path:
-            video_info = VideoInfo()
-            fps_info = video_info.get_fps_and_size(video_path)
-            if fps_info:
-                _, default_width, default_height = fps_info
+        if video_info and video_info.width is not None and video_info.height is not None:
+            default_width = video_info.width
+            default_height = video_info.height
         
         selected_res = [None, None]
         
@@ -458,8 +456,8 @@ class EncodingSettingsDialog:
         window_bg: str = '#1e1e1e',
         button_bg: str = '#323232',
         active_button_bg: str = '#192332',
-        video_path: Optional[str] = None
-    ) -> Tuple[bool, str, str, str, str, str]:
+        video_info: Optional[VideoInfo] = None
+    ) -> VideoInfo:
         """Show encoding settings dialog (replaces get_ratio).
         
         Args:
@@ -467,102 +465,90 @@ class EncodingSettingsDialog:
             window_bg: Window background color
             button_bg: Button background color
             active_button_bg: Active button background color
-            video_path: Optional path to video file to extract default dimensions
+            video_info: Optional VideoInfo object (will be modified with user selections)
             
         Returns:
-            Tuple of (is_vertical, orientation, width, height, crf, preset)
-            - is_vertical: bool - True for vertical, False for horizontal
-            - orientation: str - "_horizontal" or "_vertical"
-            - width: str - Output width
-            - height: str - Output height
-            - crf: str - CRF value
-            - preset: str - Encoding preset
+            VideoInfo object with user selections stored in it
         """
         settings_window = tk.Toplevel(root)
         settings_window.configure(bg=window_bg)
         settings_window.title("Encoding Settings")
         settings_window.grab_set()
         
-        # Extract video dimensions if video path provided
-        default_width = HD_WIDTH
-        default_height = HD_HEIGHT
-        if video_path:
+        # Initialize video_info if not provided
+        if video_info is None:
             video_info = VideoInfo()
-            fps_info = video_info.get_fps_and_size(video_path)
-            if fps_info:
-                _, default_width, default_height = fps_info
         
-        # Default values - use video dimensions if available
-        orientation = ["_horizontal"]  # Use list to allow modification in nested functions
-        is_vertical = [False]
-        width = [str(default_width)]
-        height = [str(default_height)]
-        crf_value = [str(DEFAULT_CRF)]
-        preset_value = [DEFAULT_PRESET]
+        # Use video dimensions as defaults if available
+        default_width = video_info.width if video_info.width else HD_WIDTH
+        default_height = video_info.height if video_info.height else HD_HEIGHT
+        
         dialog_completed = [False]
         
         def set_horizontal():
             """Set horizontal orientation and get settings."""
-            orientation[0] = "_horizontal"
-            is_vertical[0] = False
+            video_info.orientation = "_horizontal"
+            video_info.is_vertical = False
             
-            # Get resolution - pass video path so dialog can extract dimensions
+            # Get resolution - pass video_info so dialog can use stored dimensions
             res_width, res_height = ResolutionDialog.show(
                 settings_window, window_bg, button_bg, active_button_bg,
-                video_path=video_path, is_vertical=False
+                video_info=video_info, is_vertical=False
             )
-            width[0] = res_width
-            height[0] = res_height
+            video_info.target_width = int(res_width)
+            video_info.target_height = int(res_height)
             
             # Get CRF
-            crf_value[0] = CRFDialog.show(
+            crf = CRFDialog.show(
                 settings_window, window_bg, button_bg, active_button_bg
             )
+            video_info.crf = crf
             
             # Get preset
-            preset_value[0] = PresetDialog.show(
+            preset = PresetDialog.show(
                 settings_window, window_bg, button_bg, active_button_bg
             )
+            video_info.preset = preset
             
             dialog_completed[0] = True
             settings_window.destroy()
         
         def set_vertical():
             """Set vertical orientation and get settings."""
-            orientation[0] = "_vertical"
-            is_vertical[0] = True
+            video_info.orientation = "_vertical"
+            video_info.is_vertical = True
             
-            # Get resolution - pass video path so dialog can extract dimensions
+            # Get resolution - pass video_info so dialog can use stored dimensions
             # ResolutionDialog will flip them on return since is_vertical=True
             res_width, res_height = ResolutionDialog.show(
                 settings_window, window_bg, button_bg, active_button_bg,
-                video_path=video_path, is_vertical=True
+                video_info=video_info, is_vertical=True
             )
             # ResolutionDialog already flipped the dimensions for vertical orientation
-            width[0] = res_width
-            height[0] = res_height
+            video_info.target_width = int(res_width)
+            video_info.target_height = int(res_height)
             
             # Get CRF
-            crf_value[0] = CRFDialog.show(
+            crf = CRFDialog.show(
                 settings_window, window_bg, button_bg, active_button_bg
             )
+            video_info.crf = crf
             
             # Get preset
-            preset_value[0] = PresetDialog.show(
+            preset = PresetDialog.show(
                 settings_window, window_bg, button_bg, active_button_bg
             )
+            video_info.preset = preset
             
             dialog_completed[0] = True
             settings_window.destroy()
         
         def use_defaults():
             """Use default settings (original video dimensions)."""
-            orientation[0] = "_horizontal"
-            is_vertical[0] = False
-            width[0] = str(default_width)
-            height[0] = str(default_height)
-            crf_value[0] = str(DEFAULT_CRF)
-            preset_value[0] = DEFAULT_PRESET
+            video_info.target_width = default_width
+            video_info.target_height = default_height
+            video_info.crf = str(DEFAULT_CRF)
+            video_info.preset = DEFAULT_PRESET
             dialog_completed[0] = True
             settings_window.destroy()
         
@@ -598,11 +584,16 @@ class EncodingSettingsDialog:
         
         settings_window.wait_window()
         
-        # If closed without selection, return defaults (original video dimensions if available)
+        # If closed without selection, set defaults (original video dimensions if available)
         if not dialog_completed[0]:
-            return False, "_horizontal", str(default_width), str(default_height), str(DEFAULT_CRF), DEFAULT_PRESET
+            video_info.orientation = "_horizontal"
+            video_info.is_vertical = False
+            video_info.target_width = default_width
+            video_info.target_height = default_height
+            video_info.crf = str(DEFAULT_CRF)
+            video_info.preset = DEFAULT_PRESET
         
-        return is_vertical[0], orientation[0], width[0], height[0], crf_value[0], preset_value[0]
+        return video_info
 
 
 class AudioCodecDialog:

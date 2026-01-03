@@ -45,8 +45,8 @@ class VideoProcessor:
     def _process_ffmpeg_output(
         self,
         process: subprocess.Popen,
-        output_text,
-        progress_line_index: str,
+        progress_labels: Optional[dict],
+        status_text,
         total_frames: Optional[int],
         error_list: List[str],
         input_file: str
@@ -55,8 +55,8 @@ class VideoProcessor:
         
         Args:
             process: FFmpeg subprocess
-            output_text: Tkinter Text widget for output
-            progress_line_index: Index of progress line in output_text
+            progress_labels: Dictionary of Tkinter Label widgets for progress updates (or None for text widget mode)
+            status_text: Tkinter Text widget for status/error messages
             total_frames: Total number of frames (None if unknown)
             error_list: List to append errors to
             input_file: Input file path for logging
@@ -67,12 +67,10 @@ class VideoProcessor:
         start_time = time.perf_counter()
         tot_time = start_time
         prev_frames = 0
-        avg_frame_diff = [0] * 50
-        avg_time_diff = [0] * 50
-        avg_frame = 0
-        avg_time = 0
-        i = 0
-        j = 0
+        prev_time = start_time
+        fps_samples = []  # Store FPS samples for averaging
+        max_samples = 50  # Keep last 50 samples for rolling average
+        current_fps = 0.0
         
         error_patterns = [
             r'\[error\]', r'Error', r'error', r'ERROR',
@@ -97,8 +95,8 @@ class VideoProcessor:
                     process.wait(timeout=PROCESS_TERMINATION_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     process.kill()
-                output_text.insert("end", "\nOperation cancelled by user\n")
-                output_text.see("end")
+                status_text.insert("end", "\nOperation cancelled by user\n")
+                status_text.see("end")
                 return -1, error_list
             
             # Check for error patterns
@@ -112,19 +110,29 @@ class VideoProcessor:
             if match:
                 frames = int(match.group(1))
                 if total_frames:
-                    frame_diff = frames - prev_frames
                     now = time.perf_counter()
-                    elapsed = now - start_time
                     
-                    avg_frame_diff[i] = frame_diff
-                    avg_time_diff[i] = elapsed
-                    if j == 0:
-                        avg_frame = self._average_list(avg_frame_diff)
-                        avg_time = self._average_list(avg_time_diff)
-                        i = (i + 1) % 50
-
-                    if avg_time > 0 and avg_frame > 0:
-                        remaining_time = ((total_frames - frames) / (avg_frame / avg_time))
+                    # Calculate FPS: frames per second
+                    if prev_frames > 0 and prev_time > 0:
+                        frame_diff = frames - prev_frames
+                        time_diff = now - prev_time
+                        
+                        if time_diff > 0:
+                            # Calculate instantaneous FPS
+                            instant_fps = frame_diff / time_diff
+                            
+                            # Add to samples for rolling average
+                            fps_samples.append(instant_fps)
+                            if len(fps_samples) > max_samples:
+                                fps_samples.pop(0)  # Remove oldest sample
+                            
+                            # Calculate average FPS
+                            current_fps = self._average_list(fps_samples)
+                    
+                    # Calculate remaining time based on current FPS
+                    if current_fps > 0:
+                        remaining_frames = total_frames - frames
+                        remaining_time = remaining_frames / current_fps
                     else:
                         remaining_time = 0
                     
@@ -132,19 +140,22 @@ class VideoProcessor:
                     hours, minutes = divmod(remaining_time, 3600)
                     minutes, seconds = divmod(minutes, 60)
                     percent = (frames / total_frames) * 100
-                    progress_message = (
-                        f"Progress: {frames}/{total_frames} frames ({percent:.2f}%) "
-                        f"avg frame: {avg_frame} | Running: {(now - tot_time)/60:.2f} - "
-                        f"Remaining: {hours:02}:{minutes:02}:{seconds:02}"
-                    )
-
-                    output_text.delete(progress_line_index, f"{progress_line_index} lineend")
-                    output_text.insert(progress_line_index, progress_message)
-                    output_text.see("end")
+                    
+                    # Update progress labels if available
+                    if progress_labels:
+                        if "Frames Processed:" in progress_labels:
+                            progress_labels["Frames Processed:"].config(text=f"{frames}/{total_frames}")
+                        if "Progress:" in progress_labels:
+                            progress_labels["Progress:"].config(text=f"{percent:.2f}%")
+                        if "Average Frame Rate:" in progress_labels:
+                            progress_labels["Average Frame Rate:"].config(text=f"{current_fps:.1f} fps")
+                        if "Time Running:" in progress_labels:
+                            progress_labels["Time Running:"].config(text=f"{(now - tot_time)/60:.2f} min")
+                        if "Time Remaining:" in progress_labels:
+                            progress_labels["Time Remaining:"].config(text=f"{hours:02}:{minutes:02}:{seconds:02}")
 
                     prev_frames = frames
-                    start_time = now
-                    j = (j + 1) % 5
+                    prev_time = now
 
         return_code = process.wait()
         return return_code, error_list
@@ -154,7 +165,8 @@ class VideoProcessor:
         input_file: str,
         output_file: str,
         total_frames: Optional[int],
-        output_text,
+        progress_labels: Optional[dict],
+        status_text,
         root,
         ratio: bool = False,
         xaxis: str = str(HD_WIDTH),
@@ -170,7 +182,8 @@ class VideoProcessor:
             input_file: Input video file path
             output_file: Output video file path
             total_frames: Total number of frames (None if unknown)
-            output_text: Tkinter Text widget for output
+            progress_labels: Dictionary of Tkinter Label widgets for progress updates (or None for text widget mode)
+            status_text: Tkinter Text widget for status/error messages
             root: Tkinter root window
             ratio: Whether to maintain aspect ratio
             xaxis: Output width
@@ -201,17 +214,12 @@ class VideoProcessor:
             self._current_process = process
 
             threading_info = f" with {threads} threads" if threads > 0 else " (auto threading)"
-            output_text.insert("end", f"Starting FFmpeg{threading_info}...\n")
-            output_text.see("end")
-
-            # Placeholder for progress line
-            progress_line_index = output_text.index("end")
-            output_text.insert("end", f"{input_file} Starting...\n")
-            output_text.see("end")
+            status_text.insert("end", f"Starting FFmpeg{threading_info}...\n")
+            status_text.see("end")
 
             # Process FFmpeg output and track progress
             return_code, error_list = self._process_ffmpeg_output(
-                process, output_text, progress_line_index, total_frames, error_list, input_file
+                process, progress_labels, status_text, total_frames, error_list, input_file
             )
             
             # Clear process reference
@@ -224,11 +232,11 @@ class VideoProcessor:
                     try:
                         os.remove(output_file)
                         logger.info(f"Removed partial output file: {output_file}")
-                        output_text.insert("end", f"\nPartial output file removed.\n")
+                        status_text.insert("end", f"\nPartial output file removed.\n")
                     except Exception as e:
                         logger.warning(f"Could not remove partial file: {e}")
-                output_text.insert("end", f"\nOperation cancelled by user.\n")
-                output_text.see("end")
+                status_text.insert("end", f"\nOperation cancelled by user.\n")
+                status_text.see("end")
                 # Close window after showing cancellation message
                 root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
                     messagebox.showinfo("Cancelled", "Operation was cancelled."),
@@ -237,7 +245,7 @@ class VideoProcessor:
                 return
             
             # Handle errors and success
-            self._handle_process_result(process, return_code, error_list, output_file, output_text, root, input_file)
+            self._handle_process_result(process, return_code, error_list, output_file, status_text, root, input_file)
             
         except FileNotFoundError:
             self._current_process = None
@@ -247,15 +255,16 @@ class VideoProcessor:
         except Exception as e:
             self._current_process = None
             logger.error(f"Error during CPU encoding: {e}")
-            output_text.insert("end", f"\nError: {str(e)}\n")
-            output_text.see("end")
+            status_text.insert("end", f"\nError: {str(e)}\n")
+            status_text.see("end")
     
     def scale_video_gpu(
         self,
         input_file: str,
         output_file: str,
         total_frames: Optional[int],
-        output_text,
+        progress_labels: Optional[dict],
+        status_text,
         root,
         ratio: bool = False,
         xaxis: str = str(HD_WIDTH),
@@ -270,7 +279,8 @@ class VideoProcessor:
             input_file: Input video file path
             output_file: Output video file path
             total_frames: Total number of frames (None if unknown)
-            output_text: Tkinter Text widget for output
+            progress_labels: Dictionary of Tkinter Label widgets for progress updates (or None for text widget mode)
+            status_text: Tkinter Text widget for status/error messages
             root: Tkinter root window
             ratio: Whether to maintain aspect ratio
             xaxis: Output width
@@ -299,17 +309,12 @@ class VideoProcessor:
             )
             self._current_process = process
 
-            output_text.insert("end", "Starting FFmpeg with GPU acceleration (NVENC)...\n")
-            output_text.see("end")
-
-            # Placeholder for progress line
-            progress_line_index = output_text.index("end")
-            output_text.insert("end", f"{input_file} Starting...\n")
-            output_text.see("end")
+            status_text.insert("end", "Starting FFmpeg with GPU acceleration (NVENC)...\n")
+            status_text.see("end")
 
             # Process FFmpeg output and track progress
             return_code, error_list = self._process_ffmpeg_output(
-                process, output_text, progress_line_index, total_frames, error_list, input_file
+                process, progress_labels, status_text, total_frames, error_list, input_file
             )
             
             # Clear process reference
@@ -322,11 +327,11 @@ class VideoProcessor:
                     try:
                         os.remove(output_file)
                         logger.info(f"Removed partial output file: {output_file}")
-                        output_text.insert("end", f"\nPartial output file removed.\n")
+                        status_text.insert("end", f"\nPartial output file removed.\n")
                     except Exception as e:
                         logger.warning(f"Could not remove partial file: {e}")
-                output_text.insert("end", f"\nOperation cancelled by user.\n")
-                output_text.see("end")
+                status_text.insert("end", f"\nOperation cancelled by user.\n")
+                status_text.see("end")
                 # Close window after showing cancellation message
                 root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
                     messagebox.showinfo("Cancelled", "Operation was cancelled."),
@@ -344,8 +349,8 @@ class VideoProcessor:
             if nvenc_dll_error:
                 # GPU error - fallback to CPU
                 logger.warning("NVENC DLL error detected, falling back to CPU encoding")
-                output_text.insert("end", "\nGPU encoding failed, falling back to CPU...\n")
-                output_text.see("end")
+                status_text.insert("end", "\nGPU encoding failed, falling back to CPU...\n")
+                status_text.see("end")
                 # Remove failed GPU output and retry with CPU
                 if os.path.exists(output_file):
                     try:
@@ -353,11 +358,11 @@ class VideoProcessor:
                     except Exception:
                         pass
                 self.scale_video_cpu(
-                    input_file, output_file, total_frames, output_text, root,
+                    input_file, output_file, total_frames, progress_labels, status_text, root,
                     ratio, xaxis, yaxis, crf, preset, threads=0
                 )
             else:
-                self._handle_process_result(process, return_code, error_list, output_file, output_text, root, input_file)
+                self._handle_process_result(process, return_code, error_list, output_file, status_text, root, input_file)
             
         except FileNotFoundError:
             self._current_process = None
@@ -367,8 +372,8 @@ class VideoProcessor:
         except Exception as e:
             self._current_process = None
             logger.error(f"Error during GPU encoding: {e}")
-            output_text.insert("end", f"\nError: {str(e)}\n")
-            output_text.see("end")
+            status_text.insert("end", f"\nError: {str(e)}\n")
+            status_text.see("end")
     
     @staticmethod
     def format_file_size(size_bytes: int) -> str:
@@ -425,12 +430,12 @@ class VideoProcessor:
                     reduction_percent = (size_reduction / input_size * 100) if input_size > 0 else 0
                     
                     output_text.insert("end", f"\nFile Size Comparison:\n")
-                    output_text.insert("end", f"  Input:  {self.format_file_size(input_size)}\n")
-                    output_text.insert("end", f"  Output: {self.format_file_size(output_size)}\n")
+                    output_text.insert("end", f"  Input:  {VideoProcessor.format_file_size(input_size)}\n")
+                    output_text.insert("end", f"  Output: {VideoProcessor.format_file_size(output_size)}\n")
                     if reduction_percent > 0:
-                        output_text.insert("end", f"  Reduction: {self.format_file_size(size_reduction)} ({reduction_percent:.1f}% smaller)\n")
+                        output_text.insert("end", f"  Reduction: {VideoProcessor.format_file_size(size_reduction)} ({reduction_percent:.1f}% smaller)\n")
                     elif reduction_percent < 0:
-                        output_text.insert("end", f"  Increase: {self.format_file_size(abs(size_reduction))} ({abs(reduction_percent):.1f}% larger)\n")
+                        output_text.insert("end", f"  Increase: {VideoProcessor.format_file_size(abs(size_reduction))} ({abs(reduction_percent):.1f}% larger)\n")
                     else:
                         output_text.insert("end", f"  No size change\n")
                 except Exception as e:

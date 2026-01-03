@@ -51,8 +51,23 @@ class VideoScalerWindow:
         self.window.title(DEFAULT_WINDOW_TITLE)
         self.window.iconify()
         
-        self.output_text = tk.Text(self.window, height=20, width=100, bg=button_bg, fg="white")
-        self.output_text.pack(pady=10)
+        # Create main frame for structured layout
+        self.main_frame = tk.Frame(self.window, bg=window_bg)
+        self.main_frame.pack(pady=10, padx=10, fill="both", expand=True)
+        
+        # Parameters section (static labels)
+        self.params_frame = tk.LabelFrame(self.main_frame, text="Processing Parameters", 
+                                         bg=window_bg, fg="white", font=("Arial", "12", "bold"))
+        self.params_frame.pack(fill="x", pady=5)
+        
+        # Progress section (dynamic labels)
+        self.progress_frame = tk.LabelFrame(self.main_frame, text="Progress", 
+                                           bg=window_bg, fg="white", font=("Arial", "12", "bold"))
+        self.progress_frame.pack(fill="x", pady=5)
+        
+        # Status/Log section (for errors and completion messages)
+        self.status_text = tk.Text(self.main_frame, height=5, width=100, bg=button_bg, fg="white")
+        self.status_text.pack(fill="both", expand=True, pady=5)
         
         # Cancel button
         self.cancel_button = tk.Button(
@@ -61,6 +76,10 @@ class VideoScalerWindow:
             activebackground=CANCEL_BUTTON_ACTIVE_BG, activeforeground="white", borderwidth=2
         )
         self.cancel_button.pack(pady=5)
+        
+        # Initialize label references (will be populated when processing starts)
+        self.param_labels = {}
+        self.progress_labels = {}
         
         self._select_video()
     
@@ -77,25 +96,28 @@ class VideoScalerWindow:
         if file_path:
             self.config.set_last_input_folder(os.path.dirname(file_path))
             
-            # Get performance settings (pass video path to extract FPS and size)
-            use_gpu, use_all_cores, cpu_cores, target_fps, cap_cpu_50 = SettingsDialog.show(
-                self.window, self.window_bg, self.button_bg, self.active_button_bg, video_path=file_path
+            # Create VideoInfo object to hold video info and user selections
+            video_info = VideoInfo(file_path)
+            
+            # Get performance settings (pass video_info object)
+            video_info = SettingsDialog.show(
+                self.window, self.window_bg, self.button_bg, self.active_button_bg, video_info=video_info
             )
             
             # Save settings to config
-            self.config.set_performance_settings(use_gpu, use_all_cores, cap_cpu_50)
-            if target_fps is not None:
-                self.config.set_target_fps(target_fps)
+            self.config.set_performance_settings(video_info.use_gpu, video_info.use_all_cores, video_info.cap_cpu_50)
+            if video_info.target_fps is not None:
+                self.config.set_target_fps(video_info.target_fps)
             
             # Calculate threads: if cap_cpu_50 is True, use 50% of cores, otherwise use all cores if use_all_cores
-            if cap_cpu_50:
-                threads = max(1, cpu_cores // 2)  # Cap at 50%, minimum 1 thread
+            if video_info.cap_cpu_50:
+                threads = max(1, video_info.cpu_cores // 2)  # Cap at 50%, minimum 1 thread
             else:
-                threads = cpu_cores if use_all_cores else 0
+                threads = video_info.cpu_cores if video_info.use_all_cores else 0
             
-            # Get encoding settings using new dialog class (pass video path for default dimensions)
-            ratio = EncodingSettingsDialog.show(
-                self.window, self.window_bg, self.button_bg, self.active_button_bg, video_path=file_path
+            # Get encoding settings using new dialog class (pass video_info object)
+            video_info = EncodingSettingsDialog.show(
+                self.window, self.window_bg, self.button_bg, self.active_button_bg, video_info=video_info
             )
             
             now = datetime.now()
@@ -112,13 +134,13 @@ class VideoScalerWindow:
                 input_filename = os.path.splitext(os.path.basename(file_path))[0]
                 output_path = os.path.join(
                     output_folder,
-                    f"{input_filename.split('_')[0]}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
+                    f"{input_filename.split('_')[0]}_{video_info.orientation}_{video_info.crf}_{video_info.preset}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
                 )
             else:
                 output_path = os.path.splitext(file_path)[0]
-                output_path = f"{output_path.split('_')[0]}_{ratio[1]}_{ratio[4]}_{ratio[5]}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
+                output_path = f"{output_path.split('_')[0]}_{video_info.orientation}_{video_info.crf}_{video_info.preset}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
             
-            total_frames = self.video_info.get_total_frames(file_path)
+            total_frames = video_info.get_total_frames()
             
             # Get and display input file size
             input_size = None
@@ -128,43 +150,87 @@ class VideoScalerWindow:
                 except Exception:
                     pass
             
-            # Display settings
-            encoding_type = "GPU (NVENC)" if use_gpu else "CPU"
-            if cap_cpu_50:
+            # Clear previous labels if any
+            for widget in self.params_frame.winfo_children():
+                widget.destroy()
+            for widget in self.progress_frame.winfo_children():
+                widget.destroy()
+            self.param_labels = {}
+            self.progress_labels = {}
+            
+            # Display settings as static labels
+            encoding_type = "GPU (NVENC)" if video_info.use_gpu else "CPU"
+            if video_info.cap_cpu_50:
                 threading_info = f"CPU capped at 50% ({threads} threads)"
-            elif use_all_cores:
-                threading_info = f"All cores ({cpu_cores} threads)"
+            elif video_info.use_all_cores:
+                threading_info = f"All cores ({video_info.cpu_cores} threads)"
             else:
                 threading_info = "Default (auto)"
             
-            fps_info = f" | Target FPS: {target_fps:.2f}" if target_fps is not None else " | FPS: Keep current"
-            self.output_text.insert("end", f"Encoding: {encoding_type} | Threading: {threading_info}{fps_info}\n")
+            fps_info = f"{video_info.target_fps:.2f} fps" if video_info.target_fps is not None else "Keep current"
+            
+            # Create parameter labels in a grid
+            params = [
+                ("Encoding Type:", encoding_type),
+                ("Threading:", threading_info),
+                ("Target FPS:", fps_info),
+                ("Input File:", os.path.basename(file_path)),
+                ("Output File:", os.path.basename(output_path)),
+            ]
+            
+            if input_size is not None:
+                from ..VideoProcessor import VideoProcessor
+                params.append(("Input Size:", VideoProcessor.format_file_size(input_size)))
             
             if total_frames:
-                self.output_text.insert("end", f"Selected file: {file_path}\n")
-                if input_size is not None:
-                    from ..VideoProcessor import VideoProcessor
-                    self.output_text.insert("end", f"Input size: {VideoProcessor.format_file_size(input_size)}\n")
-                self.output_text.insert("end", f"Output file: {output_path}\n")
-                self.output_text.insert("end", f"Total frames: {total_frames}\n")
-            else:
-                self.output_text.insert("end", "Could not determine total frames. Progress won't be displayed.\n")
-                self.output_text.insert("end", f"Selected file: {file_path}\n")
-                if input_size is not None:
-                    from ..VideoProcessor import VideoProcessor
-                    self.output_text.insert("end", f"Input size: {VideoProcessor.format_file_size(input_size)}\n")
-                self.output_text.insert("end", f"Output file: {output_path}\n")
+                params.append(("Total Frames:", str(total_frames)))
+            
+            for i, (label_text, value_text) in enumerate(params):
+                label = tk.Label(self.params_frame, text=label_text, bg=self.window_bg, fg="white", 
+                               font=("Arial", "10", "bold"), anchor="w")
+                label.grid(row=i, column=0, sticky="w", padx=5, pady=2)
+                
+                value_label = tk.Label(self.params_frame, text=value_text, bg=self.window_bg, fg="#4CAF50", 
+                                     font=("Arial", "10"), anchor="w")
+                value_label.grid(row=i, column=1, sticky="w", padx=5, pady=2)
+                self.param_labels[label_text] = value_label
+            
+            # Create progress labels
+            progress_items = [
+                ("Frames Processed:", "0"),
+                ("Progress:", "0.00%"),
+                ("Average Frame Rate:", "0"),
+                ("Time Running:", "0.00 min"),
+                ("Time Remaining:", "00:00:00"),
+            ]
+            
+            for i, (label_text, initial_value) in enumerate(progress_items):
+                label = tk.Label(self.progress_frame, text=label_text, bg=self.window_bg, fg="white", 
+                               font=("Arial", "10", "bold"), anchor="w")
+                label.grid(row=i, column=0, sticky="w", padx=5, pady=2)
+                
+                value_label = tk.Label(self.progress_frame, text=initial_value, bg=self.window_bg, fg="#FFD700", 
+                                     font=("Arial", "10", "bold"), anchor="w")
+                value_label.grid(row=i, column=1, sticky="w", padx=5, pady=2)
+                self.progress_labels[label_text] = value_label
+            
+            if not total_frames:
+                self.status_text.insert("end", "Could not determine total frames. Progress won't be displayed.\n")
+                self.status_text.see("end")
             
             # Process video in background thread to keep UI responsive
-            if use_gpu:
+            # Use values from video_info object, pass progress labels instead of text widget
+            if video_info.use_gpu:
                 Thread(target=self.processor.scale_video_gpu, args=(
-                    file_path, output_path, total_frames, self.output_text, self.window,
-                    ratio[0], ratio[2], ratio[3], ratio[4], ratio[5], target_fps
+                    file_path, output_path, total_frames, self.progress_labels, self.status_text, self.window,
+                    video_info.is_vertical, str(video_info.target_width), str(video_info.target_height),
+                    video_info.crf, video_info.preset, video_info.target_fps
                 )).start()
             else:
                 Thread(target=self.processor.scale_video_cpu, args=(
-                    file_path, output_path, total_frames, self.output_text, self.window,
-                    ratio[0], ratio[2], ratio[3], ratio[4], ratio[5], threads, target_fps
+                    file_path, output_path, total_frames, self.progress_labels, self.status_text, self.window,
+                    video_info.is_vertical, str(video_info.target_width), str(video_info.target_height),
+                    video_info.crf, video_info.preset, threads, video_info.target_fps
                 )).start()
         else:
             self.winbool = False
@@ -228,22 +294,25 @@ class BatchWindow:
             if video_files:
                 first_video_path = os.path.join(folder_path, video_files[0])
             
-            # Get performance settings (pass first video path if available)
-            use_gpu, use_all_cores, cpu_cores, target_fps, cap_cpu_50 = SettingsDialog.show(
+            # Create VideoInfo object for batch processing (use first video for defaults)
+            video_info = VideoInfo(first_video_path) if first_video_path else VideoInfo()
+            
+            # Get performance settings (pass video_info object)
+            video_info = SettingsDialog.show(
                 self.window, self.window_bg, self.button_bg, self.active_button_bg, 
-                video_path=first_video_path
+                video_info=video_info
             )
             
             # Save settings to config
-            self.config.set_performance_settings(use_gpu, use_all_cores, cap_cpu_50)
-            if target_fps is not None:
-                self.config.set_target_fps(target_fps)
+            self.config.set_performance_settings(video_info.use_gpu, video_info.use_all_cores, video_info.cap_cpu_50)
+            if video_info.target_fps is not None:
+                self.config.set_target_fps(video_info.target_fps)
             
             # Calculate threads: if cap_cpu_50 is True, use 50% of cores, otherwise use all cores if use_all_cores
-            if cap_cpu_50:
-                threads = max(1, cpu_cores // 2)  # Cap at 50%, minimum 1 thread
+            if video_info.cap_cpu_50:
+                threads = max(1, video_info.cpu_cores // 2)  # Cap at 50%, minimum 1 thread
             else:
-                threads = cpu_cores if use_all_cores else 0
+                threads = video_info.cpu_cores if video_info.use_all_cores else 0
             
             # Get output folder
             last_output_folder = self.config.get_last_output_folder()
@@ -257,21 +326,21 @@ class BatchWindow:
             if output_folder:
                 self.config.set_last_output_folder(output_folder)
             
-            # Get encoding settings using new dialog class (pass first video path for default dimensions)
-            ratio = EncodingSettingsDialog.show(
-                self.window, self.window_bg, self.button_bg, self.active_button_bg, video_path=first_video_path
+            # Get encoding settings using new dialog class (pass video_info object)
+            video_info = EncodingSettingsDialog.show(
+                self.window, self.window_bg, self.button_bg, self.active_button_bg, video_info=video_info
             )
             
             # Display settings
-            encoding_type = "GPU (NVENC)" if use_gpu else "CPU"
-            if cap_cpu_50:
+            encoding_type = "GPU (NVENC)" if video_info.use_gpu else "CPU"
+            if video_info.cap_cpu_50:
                 threading_info = f"CPU capped at 50% ({threads} threads)"
-            elif use_all_cores:
-                threading_info = f"All cores ({cpu_cores} threads)"
+            elif video_info.use_all_cores:
+                threading_info = f"All cores ({video_info.cpu_cores} threads)"
             else:
                 threading_info = "Default (auto)"
             
-            fps_info = f" | Target FPS: {target_fps:.2f}" if target_fps is not None else " | FPS: Keep current"
+            fps_info = f" | Target FPS: {video_info.target_fps:.2f}" if video_info.target_fps is not None else " | FPS: Keep current"
             self.output_text.insert("end", f"Encoding: {encoding_type} | Threading: {threading_info}{fps_info}\n")
             self.output_text.insert("end", f"Input folder: {folder_path}\n")
             if output_folder:
@@ -280,10 +349,11 @@ class BatchWindow:
                 self.output_text.insert("end", f"Output folder: Same as input\n")
             self.output_text.see("end")
             
-            # Process videos
+            # Process videos - pass video_info object
             Thread(target=self.batch_processor.process_videos_in_folder, args=(
-                folder_path, self.output_text, self.window, use_gpu, threads, output_folder,
-                ratio, ratio[2], ratio[3], ratio[4], ratio[5], target_fps
+                folder_path, self.output_text, self.window, video_info.use_gpu, threads, output_folder,
+                video_info.is_vertical, str(video_info.target_width), str(video_info.target_height),
+                video_info.crf, video_info.preset, video_info.target_fps
             )).start()
         else:
             self.winbool = False
