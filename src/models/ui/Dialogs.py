@@ -586,12 +586,7 @@ class EncodingSettingsDialog:
         
         # If closed without selection, set defaults (original video dimensions if available)
         if not dialog_completed[0]:
-            video_info.orientation = "_horizontal"
-            video_info.is_vertical = False
-            video_info.target_width = default_width
-            video_info.target_height = default_height
-            video_info.crf = str(DEFAULT_CRF)
-            video_info.preset = DEFAULT_PRESET
+            use_defaults()
         
         return video_info
 

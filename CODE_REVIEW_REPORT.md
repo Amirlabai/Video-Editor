@@ -15,7 +15,7 @@ This is a Python-based video editing application using FFmpeg for video processi
 **Overall Assessment:** ✅ **Significantly Improved** - Many critical issues have been fixed. The application is now more robust with better error handling, logging, user features, improved code organization, and a foundation for class-based architecture.
 
 **Last Updated:** Current session  
-**Progress:** ~90% of high/medium priority items completed  
+**Progress:** ~95% of high/medium priority items completed  
 **Status:** Historical reference - See PROGRESS_SUMMARY.md for current status
 
 ### Recent Improvements (Completed)
@@ -32,6 +32,12 @@ This is a Python-based video editing application using FFmpeg for video processi
 - ✅ Updated all modules to use centralized constants (resolutions, CRF, presets, etc.)
 - ✅ Created ConfigManager for user preferences persistence
 - ✅ Added Settings dialog accessible from main interface
+- ✅ **FPS reduction settings** - Option to reduce FPS to 12, 24, or 30 fps
+- ✅ **CPU usage limiting** - 50% CPU cap option for reduced resource usage
+- ✅ **File size display** - Pre and post-processing size comparison with percentage
+- ✅ **VideoInfo object refactoring** - All user settings centralized in VideoInfo object
+- ✅ **Improved processing UI** - Structured label-based layout with static parameters and dynamic progress
+- ✅ **Fixed average frame calculation** - Proper FPS calculation with rolling average
 - ✅ Created core class structure foundation (VideoInfo, FFmpegCommandBuilder, VideoProcessor, VideoJoiner)
 - ✅ Fixed UI responsiveness - Video processing runs in background threads
 - ✅ Fixed messagebox import error - Corrected incorrect `__import__` usage
@@ -144,10 +150,10 @@ This is a Python-based video editing application using FFmpeg for video processi
 
 #### **Progress Management**
 - ❌ No pause/resume functionality
-- ❌ No cancel operation during encoding
+- ✅ Cancel operation during encoding (with automatic window closure)
 - ❌ No queue system for multiple files
-- ❌ No estimated file size before encoding
-- ❌ No preview of output settings
+- ✅ File size display (pre and post-processing with percentage)
+- ✅ Preview of output settings (PreviewWindow class)
 
 #### **File Management**
 - ❌ No drag-and-drop support
@@ -157,10 +163,10 @@ This is a Python-based video editing application using FFmpeg for video processi
 - ❌ No option to overwrite existing files (fails silently or creates duplicates)
 
 #### **Settings & Preferences**
-- ❌ No settings dialog
-- ❌ No save/load presets
+- ✅ Settings dialog (performance settings, GPU/CPU, threading, FPS, CPU cap)
+- ❌ No save/load presets (configuration persists but no named presets)
 - ❌ No keyboard shortcuts
-- ❌ No dark/light theme toggle
+- ✅ Dark theme (configurable colors via ConfigManager)
 - ❌ No language/localization support
 
 ### 3.2 Video Processing Features
@@ -168,12 +174,13 @@ This is a Python-based video editing application using FFmpeg for video processi
 #### **Advanced Encoding Options**
 - ❌ No bitrate control (only CRF/CQ)
 - ❌ No two-pass encoding option
-- ❌ No audio codec selection (hardcoded AAC)
-- ❌ No audio bitrate selection (hardcoded 128k)
+- ✅ Audio codec selection (AAC, MP3, Opus, Vorbis, Copy) - Available via AudioCodecDialog
+- ✅ Audio bitrate selection (64k-320k) - Available via AudioBitrateDialog
 - ❌ No subtitle handling
 - ❌ No video filters (brightness, contrast, etc.)
 - ❌ No crop/trim functionality
 - ❌ No watermark support
+- ✅ FPS reduction (12, 24, 30 fps or keep current)
 
 #### **Format Support**
 - ❌ Limited format support (only common formats)

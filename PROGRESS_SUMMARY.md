@@ -79,16 +79,27 @@
 ### High Priority
 - [x] Add cancel functionality to JoinFiles ✅
 - [x] Add output folder selection to JoinFiles ✅
+- [x] FPS reduction settings ✅
+- [x] CPU usage limiting ✅
+- [x] File size display ✅
+- [x] VideoInfo object refactoring ✅
+- [x] Improved processing UI ✅
 
 ### Medium Priority
 - [x] Configuration file support (save/load user preferences) ✅
-- [ ] Parallel batch processing
+- [ ] **Parallel batch processing** - Process multiple videos simultaneously
 - [x] Refactor into proper class structure ✅
+- [ ] **BatchWindow UI improvements** - Apply same label-based UI to batch processing window
 
 ### Low Priority
 - [x] Unit tests ✅
 - [x] Additional encoding options ✅
 - [x] Preview functionality ✅
+- [ ] **Advanced video filters** - Brightness, contrast, saturation adjustments
+- [ ] **Crop/trim functionality** - Select video regions and trim clips
+- [ ] **Watermark support** - Add text or image watermarks
+- [ ] **Two-pass encoding** - Better quality control for target file sizes
+- [ ] **Bitrate control** - Alternative to CRF for precise file size control
 
 ## 📊 Statistics
 
@@ -103,11 +114,15 @@
 ## 🎯 Next Steps
 
 ### Future Enhancements
-- ⏳ Parallel batch processing for better performance
-- ⏳ Integration of advanced encoding options into main UI (audio/video codec selection)
-- ⏳ Enhanced preview with thumbnail generation
-- ⏳ Two-pass encoding option
-- ⏳ Bitrate control option (alternative to CRF)
+- ⏳ **Parallel batch processing** - Process multiple videos simultaneously using multiprocessing
+- ⏳ **BatchWindow UI improvements** - Apply structured label-based UI to batch processing
+- ⏳ **Integration of advanced encoding options** - Make audio/video codec selection accessible from main UI
+- ⏳ **Enhanced preview** - Thumbnail generation and video preview before encoding
+- ⏳ **Two-pass encoding** - Better quality control for target file sizes
+- ⏳ **Bitrate control** - Alternative to CRF for precise file size control
+- ⏳ **Video filters** - Brightness, contrast, saturation, sharpness adjustments
+- ⏳ **Crop/trim functionality** - Select video regions and trim clips
+- ⏳ **Watermark support** - Add text or image watermarks to videos
 
 ### Migration Status ✅ **COMPLETED**
 - ✅ New class-based UI is the only implementation (no fallbacks)
@@ -138,4 +153,37 @@
   - Video file information (codec, resolution, framerate, total frames)
   - Encoding settings preview (resolution, quality, preset, codecs)
   - Settings summary before encoding
+
+### Recent Enhancements (Latest Session) ✅
+- ✅ **FPS Reduction Settings** - Added to SettingsDialog:
+  - Display current video FPS and size
+  - Option to reduce FPS to 12, 24, or 30 fps (only reduction allowed)
+  - Option to keep current FPS
+  - FPS setting integrated into FFmpeg commands
+- ✅ **CPU Usage Limiting** - Added 50% CPU cap option:
+  - Checkbox in SettingsDialog to cap CPU usage at 50%
+  - Automatically calculates thread count (50% of available cores)
+  - Helps reduce system resource usage during encoding
+- ✅ **File Size Display** - Pre and post-processing size comparison:
+  - Shows input file size before processing
+  - Shows output file size after processing
+  - Calculates and displays size reduction/increase percentage
+  - Human-readable format (KB, MB, GB)
+- ✅ **VideoInfo Object Refactoring** - Centralized user settings:
+  - All user selections now stored in VideoInfo object
+  - Settings include: target_fps, target_width, target_height, orientation, crf, preset
+  - Performance settings: use_gpu, use_all_cores, cap_cpu_50, cpu_cores
+  - Dialogs now modify VideoInfo object directly (no tuple returns)
+  - Cleaner, more object-oriented architecture
+- ✅ **Improved Processing UI** - Structured label-based layout:
+  - Static parameter labels (encoding type, threading, FPS, file paths, input size)
+  - Dynamic progress labels (frames processed, progress %, average FPS, time running, time remaining)
+  - Separate status/log section for errors and completion messages
+  - Cleaner, more organized display
+- ✅ **Fixed Average Frame Calculation** - Proper FPS calculation:
+  - Corrected frame rate calculation logic
+  - Uses time difference between frame updates
+  - Rolling average of last 50 FPS samples
+  - Accurate remaining time estimates
+- ✅ **Code Cleanup** - Removed all emojis from print statements for better compatibility
 

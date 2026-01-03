@@ -7,6 +7,7 @@ import re
 import time
 import os
 import logging
+import tkinter as tk
 from typing import List, Tuple, Optional, Callable
 from threading import Thread
 from tkinter import messagebox
@@ -49,7 +50,8 @@ class VideoProcessor:
         status_text,
         total_frames: Optional[int],
         error_list: List[str],
-        input_file: str
+        input_file: str,
+        root=None
     ) -> Tuple[int, List[str]]:
         """Process FFmpeg stdout output, track progress, and capture errors.
         
@@ -95,8 +97,12 @@ class VideoProcessor:
                     process.wait(timeout=PROCESS_TERMINATION_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     process.kill()
-                status_text.insert("end", "\nOperation cancelled by user\n")
-                status_text.see("end")
+                # Thread-safe widget update
+                if status_text and root:
+                    try:
+                        root.after(0, lambda st=status_text: (st.insert("end", "\nOperation cancelled by user\n"), st.see("end")) if st.winfo_exists() else None)
+                    except:
+                        pass  # Widget may have been destroyed
                 return -1, error_list
             
             # Check for error patterns
@@ -141,18 +147,23 @@ class VideoProcessor:
                     minutes, seconds = divmod(minutes, 60)
                     percent = (frames / total_frames) * 100
                     
-                    # Update progress labels if available
-                    if progress_labels:
-                        if "Frames Processed:" in progress_labels:
-                            progress_labels["Frames Processed:"].config(text=f"{frames}/{total_frames}")
-                        if "Progress:" in progress_labels:
-                            progress_labels["Progress:"].config(text=f"{percent:.2f}%")
-                        if "Average Frame Rate:" in progress_labels:
-                            progress_labels["Average Frame Rate:"].config(text=f"{current_fps:.1f} fps")
-                        if "Time Running:" in progress_labels:
-                            progress_labels["Time Running:"].config(text=f"{(now - tot_time)/60:.2f} min")
-                        if "Time Remaining:" in progress_labels:
-                            progress_labels["Time Remaining:"].config(text=f"{hours:02}:{minutes:02}:{seconds:02}")
+                    # Update progress labels if available (thread-safe)
+                    if progress_labels and root:
+                        def update_progress(f=frames, tf=total_frames, p=percent, cf=current_fps, tr=(now - tot_time)/60, rem=f"{hours:02}:{minutes:02}:{seconds:02}"):
+                            try:
+                                if "Frames Processed:" in progress_labels:
+                                    progress_labels["Frames Processed:"].config(text=f"{f}/{tf}")
+                                if "Progress:" in progress_labels:
+                                    progress_labels["Progress:"].config(text=f"{p:.2f}%")
+                                if "Average Frame Rate:" in progress_labels:
+                                    progress_labels["Average Frame Rate:"].config(text=f"{cf:.1f} fps")
+                                if "Time Running:" in progress_labels:
+                                    progress_labels["Time Running:"].config(text=f"{tr:.2f} min")
+                                if "Time Remaining:" in progress_labels:
+                                    progress_labels["Time Remaining:"].config(text=rem)
+                            except:
+                                pass  # Widget may have been destroyed
+                        root.after(0, update_progress)
 
                     prev_frames = frames
                     prev_time = now
@@ -174,7 +185,8 @@ class VideoProcessor:
         crf: str = DEFAULT_CRF,
         preset: str = DEFAULT_PRESET,
         threads: int = 0,
-        fps: Optional[float] = None
+        fps: Optional[float] = None,
+        close_window: bool = True
     ) -> None:
         """Scale video using CPU encoding.
         
@@ -214,12 +226,11 @@ class VideoProcessor:
             self._current_process = process
 
             threading_info = f" with {threads} threads" if threads > 0 else " (auto threading)"
-            status_text.insert("end", f"Starting FFmpeg{threading_info}...\n")
-            status_text.see("end")
+            root.after(0, lambda st=status_text, info=threading_info: (st.insert("end", f"Starting FFmpeg{info}...\n"), st.see("end")) if st.winfo_exists() else None)
 
             # Process FFmpeg output and track progress
             return_code, error_list = self._process_ffmpeg_output(
-                process, progress_labels, status_text, total_frames, error_list, input_file
+                process, progress_labels, status_text, total_frames, error_list, input_file, root
             )
             
             # Clear process reference
@@ -232,11 +243,10 @@ class VideoProcessor:
                     try:
                         os.remove(output_file)
                         logger.info(f"Removed partial output file: {output_file}")
-                        status_text.insert("end", f"\nPartial output file removed.\n")
+                        root.after(0, lambda st=status_text: st.insert("end", f"\nPartial output file removed.\n") if st.winfo_exists() else None)
                     except Exception as e:
                         logger.warning(f"Could not remove partial file: {e}")
-                status_text.insert("end", f"\nOperation cancelled by user.\n")
-                status_text.see("end")
+                root.after(0, lambda st=status_text: (st.insert("end", f"\nOperation cancelled by user.\n"), st.see("end")) if st.winfo_exists() else None)
                 # Close window after showing cancellation message
                 root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
                     messagebox.showinfo("Cancelled", "Operation was cancelled."),
@@ -245,7 +255,7 @@ class VideoProcessor:
                 return
             
             # Handle errors and success
-            self._handle_process_result(process, return_code, error_list, output_file, status_text, root, input_file)
+            self._handle_process_result(process, return_code, error_list, output_file, status_text, root, input_file, close_window)
             
         except FileNotFoundError:
             self._current_process = None
@@ -255,8 +265,8 @@ class VideoProcessor:
         except Exception as e:
             self._current_process = None
             logger.error(f"Error during CPU encoding: {e}")
-            status_text.insert("end", f"\nError: {str(e)}\n")
-            status_text.see("end")
+            error_msg = str(e)  # Capture error message for lambda
+            root.after(0, lambda msg=error_msg: (status_text.insert("end", f"\nError: {msg}\n"), status_text.see("end")) if status_text.winfo_exists() else None)
     
     def scale_video_gpu(
         self,
@@ -271,7 +281,8 @@ class VideoProcessor:
         yaxis: str = str(HD_HEIGHT),
         crf: str = DEFAULT_CRF,
         preset: str = DEFAULT_PRESET,
-        fps: Optional[float] = None
+        fps: Optional[float] = None,
+        close_window: bool = True
     ) -> None:
         """Scale video using GPU encoding (NVENC).
         
@@ -309,12 +320,11 @@ class VideoProcessor:
             )
             self._current_process = process
 
-            status_text.insert("end", "Starting FFmpeg with GPU acceleration (NVENC)...\n")
-            status_text.see("end")
+            root.after(0, lambda st=status_text: (st.insert("end", "Starting FFmpeg with GPU acceleration (NVENC)...\n"), st.see("end")) if st.winfo_exists() else None)
 
             # Process FFmpeg output and track progress
             return_code, error_list = self._process_ffmpeg_output(
-                process, progress_labels, status_text, total_frames, error_list, input_file
+                process, progress_labels, status_text, total_frames, error_list, input_file, root
             )
             
             # Clear process reference
@@ -327,11 +337,10 @@ class VideoProcessor:
                     try:
                         os.remove(output_file)
                         logger.info(f"Removed partial output file: {output_file}")
-                        status_text.insert("end", f"\nPartial output file removed.\n")
+                        root.after(0, lambda st=status_text: st.insert("end", f"\nPartial output file removed.\n") if st.winfo_exists() else None)
                     except Exception as e:
                         logger.warning(f"Could not remove partial file: {e}")
-                status_text.insert("end", f"\nOperation cancelled by user.\n")
-                status_text.see("end")
+                root.after(0, lambda st=status_text: (st.insert("end", f"\nOperation cancelled by user.\n"), st.see("end")) if st.winfo_exists() else None)
                 # Close window after showing cancellation message
                 root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
                     messagebox.showinfo("Cancelled", "Operation was cancelled."),
@@ -349,8 +358,7 @@ class VideoProcessor:
             if nvenc_dll_error:
                 # GPU error - fallback to CPU
                 logger.warning("NVENC DLL error detected, falling back to CPU encoding")
-                status_text.insert("end", "\nGPU encoding failed, falling back to CPU...\n")
-                status_text.see("end")
+                root.after(0, lambda st=status_text: (st.insert("end", "\nGPU encoding failed, falling back to CPU...\n"), st.see("end")) if st.winfo_exists() else None)
                 # Remove failed GPU output and retry with CPU
                 if os.path.exists(output_file):
                     try:
@@ -359,10 +367,10 @@ class VideoProcessor:
                         pass
                 self.scale_video_cpu(
                     input_file, output_file, total_frames, progress_labels, status_text, root,
-                    ratio, xaxis, yaxis, crf, preset, threads=0
+                    ratio, xaxis, yaxis, crf, preset, threads=0, close_window=close_window
                 )
             else:
-                self._handle_process_result(process, return_code, error_list, output_file, status_text, root, input_file)
+                self._handle_process_result(process, return_code, error_list, output_file, status_text, root, input_file, close_window)
             
         except FileNotFoundError:
             self._current_process = None
@@ -372,8 +380,8 @@ class VideoProcessor:
         except Exception as e:
             self._current_process = None
             logger.error(f"Error during GPU encoding: {e}")
-            status_text.insert("end", f"\nError: {str(e)}\n")
-            status_text.see("end")
+            error_msg = str(e)  # Capture error message for lambda
+            root.after(0, lambda st=status_text, msg=error_msg: (st.insert("end", f"\nError: {msg}\n"), st.see("end")) if st.winfo_exists() else None)
     
     @staticmethod
     def format_file_size(size_bytes: int) -> str:
@@ -402,7 +410,8 @@ class VideoProcessor:
         output_file: str,
         output_text,
         root,
-        input_file: Optional[str] = None
+        input_file: Optional[str] = None,
+        close_window: bool = True
     ) -> None:
         """Handle the result of a video processing operation.
         
@@ -456,10 +465,11 @@ class VideoProcessor:
                     output_text.insert("end", f"  - {error}\n")
         
         output_text.see("end")
-        root.after(SUCCESS_MESSAGE_DELAY, lambda: (
-            messagebox.showinfo("Done", "Video processing completed!"),
-            root.destroy()
-        ))
+        if close_window:
+            root.after(SUCCESS_MESSAGE_DELAY, lambda: (
+                messagebox.showinfo("Done", "Video processing completed!"),
+                root.destroy()
+            ))
     
     @staticmethod
     def _get_ffmpeg_error_code(return_code: int) -> str:

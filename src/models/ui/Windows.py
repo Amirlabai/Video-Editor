@@ -264,11 +264,38 @@ class BatchWindow:
         self.window = tk.Tk()
         self.window.configure(bg=window_bg)
         self.window.title(BATCH_WINDOW_TITLE)
-        self.window.geometry("700x400")
-        self.window.withdraw()
+        self.window.geometry("800x600")
+        self.window.iconify()
         
-        self.output_text = tk.Text(self.window, height=20, width=120, bg=button_bg, fg="white")
-        self.output_text.pack(padx=10, pady=10)
+        # Create main frame for structured layout
+        self.main_frame = tk.Frame(self.window, bg=window_bg)
+        self.main_frame.pack(pady=10, padx=10, fill="both", expand=True)
+        
+        # Parameters section (static labels)
+        self.params_frame = tk.LabelFrame(self.main_frame, text="Batch Processing Parameters", 
+                                         bg=window_bg, fg="white", font=("Arial", "12", "bold"))
+        self.params_frame.pack(fill="x", pady=5)
+        
+        # Progress section (dynamic labels)
+        self.progress_frame = tk.LabelFrame(self.main_frame, text="Batch Progress", 
+                                           bg=window_bg, fg="white", font=("Arial", "12", "bold"))
+        self.progress_frame.pack(fill="x", pady=5)
+        
+        # Status/Log section (for file-level messages and errors)
+        self.status_text = tk.Text(self.main_frame, height=5, width=100, bg=button_bg, fg="white")
+        self.status_text.pack(fill="both", expand=True, pady=5)
+        
+        # Cancel button
+        self.cancel_button = tk.Button(
+            self.window, text="Cancel Operation", command=lambda: self.batch_processor.cancel(),
+            bg=CANCEL_BUTTON_BG, fg="white", font=("Arial", "10", "bold"),
+            activebackground=CANCEL_BUTTON_ACTIVE_BG, activeforeground="white", borderwidth=2
+        )
+        self.cancel_button.pack(pady=5)
+        
+        # Initialize label references (will be populated when processing starts)
+        self.param_labels = {}
+        self.progress_labels = {}
         
         self._select_folder()
     
@@ -331,7 +358,15 @@ class BatchWindow:
                 self.window, self.window_bg, self.button_bg, self.active_button_bg, video_info=video_info
             )
             
-            # Display settings
+            # Clear previous labels if any
+            for widget in self.params_frame.winfo_children():
+                widget.destroy()
+            for widget in self.progress_frame.winfo_children():
+                widget.destroy()
+            self.param_labels = {}
+            self.progress_labels = {}
+            
+            # Display settings as static labels (similar to single video window)
             encoding_type = "GPU (NVENC)" if video_info.use_gpu else "CPU"
             if video_info.cap_cpu_50:
                 threading_info = f"CPU capped at 50% ({threads} threads)"
@@ -340,18 +375,61 @@ class BatchWindow:
             else:
                 threading_info = "Default (auto)"
             
-            fps_info = f" | Target FPS: {video_info.target_fps:.2f}" if video_info.target_fps is not None else " | FPS: Keep current"
-            self.output_text.insert("end", f"Encoding: {encoding_type} | Threading: {threading_info}{fps_info}\n")
-            self.output_text.insert("end", f"Input folder: {folder_path}\n")
-            if output_folder:
-                self.output_text.insert("end", f"Output folder: {output_folder}\n")
-            else:
-                self.output_text.insert("end", f"Output folder: Same as input\n")
-            self.output_text.see("end")
+            fps_info = f"{video_info.target_fps:.2f} fps" if video_info.target_fps is not None else "Keep current"
+            resolution_info = f"{video_info.target_width}x{video_info.target_height}"
             
-            # Process videos - pass video_info object
+            # Create parameter labels in a grid
+            params = [
+                ("Encoding Type:", encoding_type),
+                ("Threading:", threading_info),
+                ("Target FPS:", fps_info),
+                ("Resolution:", resolution_info),
+                ("CRF:", video_info.crf),
+                ("Preset:", video_info.preset),
+                ("Input Folder:", os.path.basename(folder_path)),
+            ]
+            
+            if output_folder:
+                params.append(("Output Folder:", os.path.basename(output_folder)))
+            else:
+                params.append(("Output Folder:", "Same as input"))
+            
+            for i, (label_text, value_text) in enumerate(params):
+                label = tk.Label(self.params_frame, text=label_text, bg=self.window_bg, fg="white", 
+                               font=("Arial", "10", "bold"), anchor="w")
+                label.grid(row=i, column=0, sticky="w", padx=5, pady=2)
+                
+                value_label = tk.Label(self.params_frame, text=value_text, bg=self.window_bg, fg="#4CAF50", 
+                                     font=("Arial", "10"), anchor="w")
+                value_label.grid(row=i, column=1, sticky="w", padx=5, pady=2)
+                self.param_labels[label_text] = value_label
+            
+            # Create progress labels (batch-level and per-file progress)
+            progress_items = [
+                ("Total Files:", "0"),
+                ("Files Processed:", "0"),
+                ("Overall Progress:", "0.00%"),
+                ("Current File:", "-"),
+                ("Frames Processed:", "0"),
+                ("Progress:", "0.00%"),
+                ("Average Frame Rate:", "0"),
+                ("Time Running:", "0.00 min"),
+                ("Time Remaining:", "00:00:00"),
+            ]
+            
+            for i, (label_text, initial_value) in enumerate(progress_items):
+                label = tk.Label(self.progress_frame, text=label_text, bg=self.window_bg, fg="white", 
+                               font=("Arial", "10", "bold"), anchor="w")
+                label.grid(row=i, column=0, sticky="w", padx=5, pady=2)
+                
+                value_label = tk.Label(self.progress_frame, text=initial_value, bg=self.window_bg, fg="#FFD700", 
+                                     font=("Arial", "10", "bold"), anchor="w")
+                value_label.grid(row=i, column=1, sticky="w", padx=5, pady=2)
+                self.progress_labels[label_text] = value_label
+            
+            # Process videos - pass progress labels and status text
             Thread(target=self.batch_processor.process_videos_in_folder, args=(
-                folder_path, self.output_text, self.window, video_info.use_gpu, threads, output_folder,
+                folder_path, self.progress_labels, self.status_text, self.window, video_info.use_gpu, threads, output_folder,
                 video_info.is_vertical, str(video_info.target_width), str(video_info.target_height),
                 video_info.crf, video_info.preset, video_info.target_fps
             )).start()
