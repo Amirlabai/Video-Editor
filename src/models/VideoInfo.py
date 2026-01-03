@@ -71,6 +71,42 @@ class VideoInfo:
             return None
     
     @staticmethod
+    def get_fps_and_size(video_path: str) -> Optional[Tuple[float, int, int]]:
+        """Extract FPS and video dimensions using ffprobe.
+        
+        Args:
+            video_path: Path to the video file
+            
+        Returns:
+            Tuple of (fps, width, height) or None if extraction fails
+        """
+        try:
+            cmd = [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height,r_frame_rate",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                video_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            lines = result.stdout.strip().splitlines()
+            width = int(lines[0])
+            height = int(lines[1])
+            framerate_str = lines[2]
+            
+            # Parse framerate (e.g., "30/1" or "29.97/1")
+            if "/" in framerate_str:
+                num, den = framerate_str.split("/")
+                fps = float(num) / float(den)
+            else:
+                fps = float(framerate_str)
+            
+            return fps, width, height
+        except Exception as e:
+            logger.error(f"Error getting FPS and size for {video_path}: {e}")
+            return None
+    
+    @staticmethod
     def check_compatibility(video_files: list) -> bool:
         """Check if all videos have matching codec, resolution, and framerate.
         

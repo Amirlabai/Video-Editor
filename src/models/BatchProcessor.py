@@ -51,7 +51,8 @@ class BatchProcessor:
         xaxis: str = None,
         yaxis: str = None,
         crf: str = None,
-        preset: str = None
+        preset: str = None,
+        fps: Optional[float] = None
     ) -> None:
         """Process all videos in a folder.
         
@@ -72,11 +73,11 @@ class BatchProcessor:
         total_files = len(video_files)
         
         if total_files == 0:
-            output_text.insert("end", "❌ No video files found in the selected folder.\n")
+            output_text.insert("end", "No video files found in the selected folder.\n")
             output_text.see("end")
             return
         
-        output_text.insert("end", f"\n📂 Found {total_files} video files to process.\n")
+        output_text.insert("end", f"\nFound {total_files} video files to process.\n")
         output_text.see("end")
         
         # Get video properties from first file
@@ -101,12 +102,12 @@ class BatchProcessor:
             filename = os.path.basename(video_file)
             self._process_single_file(
                 folder_path, output_text, root, index, filename, total_files,
-                ratio, use_gpu, threads, output_folder, xaxis, yaxis, crf, preset
+                ratio, use_gpu, threads, output_folder, xaxis, yaxis, crf, preset, fps
             )
         
         # Show completion message
         root.after(1000, lambda: (
-            __import__('tkinter.messagebox').showinfo("Done", "✅ All videos have been processed!"),
+                __import__('tkinter.messagebox').showinfo("Done", "All videos have been processed!"),
             root.destroy()
         ))
     
@@ -125,7 +126,8 @@ class BatchProcessor:
         xaxis: str,
         yaxis: str,
         crf: str,
-        preset: str
+        preset: str,
+        fps: Optional[float] = None
     ) -> None:
         """Process a single video file.
         
@@ -169,15 +171,29 @@ class BatchProcessor:
         # Get total frames
         total_frames = self.video_info.get_total_frames(input_file)
         
+        # Get input file size
+        input_size = None
+        if os.path.exists(input_file):
+            try:
+                input_size = os.path.getsize(input_file)
+            except Exception:
+                pass
+        
         # Display file info
         if total_frames:
-            output_text.insert("end", f"\n📄 Processing file {index}/{total_files}: {filename}\n")
-            output_text.insert("end", f"📁 Output: {output_file}\n")
-            output_text.insert("end", f"🎞️ Frames: {total_frames}\n")
+            output_text.insert("end", f"\nProcessing file {index}/{total_files}: {filename}\n")
+            if input_size is not None:
+                from .VideoProcessor import VideoProcessor
+                output_text.insert("end", f"Input size: {VideoProcessor.format_file_size(input_size)}\n")
+            output_text.insert("end", f"Output: {output_file}\n")
+            output_text.insert("end", f"Frames: {total_frames}\n")
         else:
-            output_text.insert("end", f"\n⚠️ Running {filename} (frame count error)\n")
-            output_text.insert("end", f"\n📄 Processing file {index}/{total_files}: {filename}\n")
-            output_text.insert("end", f"📁 Output: {output_file}\n")
+            output_text.insert("end", f"\nRunning {filename} (frame count error)\n")
+            output_text.insert("end", f"\nProcessing file {index}/{total_files}: {filename}\n")
+            if input_size is not None:
+                from .VideoProcessor import VideoProcessor
+                output_text.insert("end", f"Input size: {VideoProcessor.format_file_size(input_size)}\n")
+            output_text.insert("end", f"Output: {output_file}\n")
         
         output_text.see("end")
         
@@ -185,12 +201,12 @@ class BatchProcessor:
         if use_gpu:
             self.processor.scale_video_gpu(
                 input_file, output_file, total_frames, output_text, root,
-                ratio[0], xaxis, yaxis, crf, preset
+                ratio[0], xaxis, yaxis, crf, preset, fps
             )
         else:
             self.processor.scale_video_cpu(
                 input_file, output_file, total_frames, output_text, root,
-                ratio[0], xaxis, yaxis, crf, preset, threads
+                ratio[0], xaxis, yaxis, crf, preset, threads, fps
             )
         
         output_text.insert("end", "\n")

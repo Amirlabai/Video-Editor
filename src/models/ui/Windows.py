@@ -56,7 +56,7 @@ class VideoScalerWindow:
         
         # Cancel button
         self.cancel_button = tk.Button(
-            self.window, text="❌ Cancel Operation", command=self.processor.cancel,
+            self.window, text="Cancel Operation", command=self.processor.cancel,
             bg=CANCEL_BUTTON_BG, fg="white", font=("Arial", "10", "bold"),
             activebackground=CANCEL_BUTTON_ACTIVE_BG, activeforeground="white", borderwidth=2
         )
@@ -77,15 +77,25 @@ class VideoScalerWindow:
         if file_path:
             self.config.set_last_input_folder(os.path.dirname(file_path))
             
-            # Get performance settings
-            use_gpu, use_all_cores, cpu_cores = SettingsDialog.show(
-                self.window, self.window_bg, self.button_bg, self.active_button_bg
+            # Get performance settings (pass video path to extract FPS and size)
+            use_gpu, use_all_cores, cpu_cores, target_fps, cap_cpu_50 = SettingsDialog.show(
+                self.window, self.window_bg, self.button_bg, self.active_button_bg, video_path=file_path
             )
-            threads = cpu_cores if use_all_cores else 0
             
-            # Get encoding settings using new dialog class
+            # Save settings to config
+            self.config.set_performance_settings(use_gpu, use_all_cores, cap_cpu_50)
+            if target_fps is not None:
+                self.config.set_target_fps(target_fps)
+            
+            # Calculate threads: if cap_cpu_50 is True, use 50% of cores, otherwise use all cores if use_all_cores
+            if cap_cpu_50:
+                threads = max(1, cpu_cores // 2)  # Cap at 50%, minimum 1 thread
+            else:
+                threads = cpu_cores if use_all_cores else 0
+            
+            # Get encoding settings using new dialog class (pass video path for default dimensions)
             ratio = EncodingSettingsDialog.show(
-                self.window, self.window_bg, self.button_bg, self.active_button_bg
+                self.window, self.window_bg, self.button_bg, self.active_button_bg, video_path=file_path
             )
             
             now = datetime.now()
@@ -110,30 +120,51 @@ class VideoScalerWindow:
             
             total_frames = self.video_info.get_total_frames(file_path)
             
+            # Get and display input file size
+            input_size = None
+            if os.path.exists(file_path):
+                try:
+                    input_size = os.path.getsize(file_path)
+                except Exception:
+                    pass
+            
             # Display settings
             encoding_type = "GPU (NVENC)" if use_gpu else "CPU"
-            threading_info = f"All cores ({cpu_cores} threads)" if use_all_cores else "Default (auto)"
-            self.output_text.insert("end", f"⚙️ Encoding: {encoding_type} | Threading: {threading_info}\n")
+            if cap_cpu_50:
+                threading_info = f"CPU capped at 50% ({threads} threads)"
+            elif use_all_cores:
+                threading_info = f"All cores ({cpu_cores} threads)"
+            else:
+                threading_info = "Default (auto)"
+            
+            fps_info = f" | Target FPS: {target_fps:.2f}" if target_fps is not None else " | FPS: Keep current"
+            self.output_text.insert("end", f"Encoding: {encoding_type} | Threading: {threading_info}{fps_info}\n")
             
             if total_frames:
-                self.output_text.insert("end", f"📂 Selected file: {file_path}\n")
-                self.output_text.insert("end", f"📁 Output file: {output_path}\n")
-                self.output_text.insert("end", f"🎞️ Total frames: {total_frames}\n")
+                self.output_text.insert("end", f"Selected file: {file_path}\n")
+                if input_size is not None:
+                    from ..VideoProcessor import VideoProcessor
+                    self.output_text.insert("end", f"Input size: {VideoProcessor.format_file_size(input_size)}\n")
+                self.output_text.insert("end", f"Output file: {output_path}\n")
+                self.output_text.insert("end", f"Total frames: {total_frames}\n")
             else:
-                self.output_text.insert("end", "⚠️ Could not determine total frames. Progress won't be displayed.\n")
-                self.output_text.insert("end", f"📂 Selected file: {file_path}\n")
-                self.output_text.insert("end", f"📁 Output file: {output_path}\n")
+                self.output_text.insert("end", "Could not determine total frames. Progress won't be displayed.\n")
+                self.output_text.insert("end", f"Selected file: {file_path}\n")
+                if input_size is not None:
+                    from ..VideoProcessor import VideoProcessor
+                    self.output_text.insert("end", f"Input size: {VideoProcessor.format_file_size(input_size)}\n")
+                self.output_text.insert("end", f"Output file: {output_path}\n")
             
             # Process video in background thread to keep UI responsive
             if use_gpu:
                 Thread(target=self.processor.scale_video_gpu, args=(
                     file_path, output_path, total_frames, self.output_text, self.window,
-                    ratio[0], ratio[2], ratio[3], ratio[4], ratio[5]
+                    ratio[0], ratio[2], ratio[3], ratio[4], ratio[5], target_fps
                 )).start()
             else:
                 Thread(target=self.processor.scale_video_cpu, args=(
                     file_path, output_path, total_frames, self.output_text, self.window,
-                    ratio[0], ratio[2], ratio[3], ratio[4], ratio[5], threads
+                    ratio[0], ratio[2], ratio[3], ratio[4], ratio[5], threads, target_fps
                 )).start()
         else:
             self.winbool = False
@@ -189,11 +220,30 @@ class BatchWindow:
         if folder_path:
             self.config.set_last_input_folder(folder_path)
             
-            # Get performance settings
-            use_gpu, use_all_cores, cpu_cores = SettingsDialog.show(
-                self.window, self.window_bg, self.button_bg, self.active_button_bg
+            # Get first video file to show FPS/size info (if available)
+            from ..constants import SUPPORTED_VIDEO_FORMATS
+            video_files = [f for f in os.listdir(folder_path) 
+                          if f.lower().endswith(SUPPORTED_VIDEO_FORMATS)]
+            first_video_path = None
+            if video_files:
+                first_video_path = os.path.join(folder_path, video_files[0])
+            
+            # Get performance settings (pass first video path if available)
+            use_gpu, use_all_cores, cpu_cores, target_fps, cap_cpu_50 = SettingsDialog.show(
+                self.window, self.window_bg, self.button_bg, self.active_button_bg, 
+                video_path=first_video_path
             )
-            threads = cpu_cores if use_all_cores else 0
+            
+            # Save settings to config
+            self.config.set_performance_settings(use_gpu, use_all_cores, cap_cpu_50)
+            if target_fps is not None:
+                self.config.set_target_fps(target_fps)
+            
+            # Calculate threads: if cap_cpu_50 is True, use 50% of cores, otherwise use all cores if use_all_cores
+            if cap_cpu_50:
+                threads = max(1, cpu_cores // 2)  # Cap at 50%, minimum 1 thread
+            else:
+                threads = cpu_cores if use_all_cores else 0
             
             # Get output folder
             last_output_folder = self.config.get_last_output_folder()
@@ -207,26 +257,33 @@ class BatchWindow:
             if output_folder:
                 self.config.set_last_output_folder(output_folder)
             
-            # Get encoding settings using new dialog class
+            # Get encoding settings using new dialog class (pass first video path for default dimensions)
             ratio = EncodingSettingsDialog.show(
-                self.window, self.window_bg, self.button_bg, self.active_button_bg
+                self.window, self.window_bg, self.button_bg, self.active_button_bg, video_path=first_video_path
             )
             
             # Display settings
             encoding_type = "GPU (NVENC)" if use_gpu else "CPU"
-            threading_info = f"All cores ({cpu_cores} threads)" if use_all_cores else "Default (auto)"
-            self.output_text.insert("end", f"⚙️ Encoding: {encoding_type} | Threading: {threading_info}\n")
-            self.output_text.insert("end", f"📂 Input folder: {folder_path}\n")
-            if output_folder:
-                self.output_text.insert("end", f"📁 Output folder: {output_folder}\n")
+            if cap_cpu_50:
+                threading_info = f"CPU capped at 50% ({threads} threads)"
+            elif use_all_cores:
+                threading_info = f"All cores ({cpu_cores} threads)"
             else:
-                self.output_text.insert("end", f"📁 Output folder: Same as input\n")
+                threading_info = "Default (auto)"
+            
+            fps_info = f" | Target FPS: {target_fps:.2f}" if target_fps is not None else " | FPS: Keep current"
+            self.output_text.insert("end", f"Encoding: {encoding_type} | Threading: {threading_info}{fps_info}\n")
+            self.output_text.insert("end", f"Input folder: {folder_path}\n")
+            if output_folder:
+                self.output_text.insert("end", f"Output folder: {output_folder}\n")
+            else:
+                self.output_text.insert("end", f"Output folder: Same as input\n")
             self.output_text.see("end")
             
             # Process videos
             Thread(target=self.batch_processor.process_videos_in_folder, args=(
                 folder_path, self.output_text, self.window, use_gpu, threads, output_folder,
-                ratio, ratio[2], ratio[3], ratio[4], ratio[5]
+                ratio, ratio[2], ratio[3], ratio[4], ratio[5], target_fps
             )).start()
         else:
             self.winbool = False
@@ -302,11 +359,11 @@ class JoinWindow:
             if output_folder:
                 self.config.set_last_join_output_folder(output_folder)
             
-            self.output_text.insert("end", f"📁 Selected folder: {folder_path}\n")
+            self.output_text.insert("end", f"Selected folder: {folder_path}\n")
             if output_folder:
-                self.output_text.insert("end", f"📂 Output folder: {output_folder}\n")
+                self.output_text.insert("end", f"Output folder: {output_folder}\n")
             else:
-                self.output_text.insert("end", f"📂 Output folder: Same as input\n")
+                self.output_text.insert("end", f"Output folder: Same as input\n")
             self.output_text.see("end")
             
             Thread(target=self._process_folder, args=(folder_path, output_folder)).start()
@@ -319,15 +376,15 @@ class JoinWindow:
         total_files = len(video_files)
         
         if total_files < 2:
-            self.output_text.insert("end", "❌ Need at least two compatible videos to join.\n")
+            self.output_text.insert("end", "Need at least two compatible videos to join.\n")
             return
         
-        self.output_text.insert("end", f"\n📂 Found {total_files} video files to join.\n")
+        self.output_text.insert("end", f"\nFound {total_files} video files to join.\n")
         self.output_text.see("end")
         
         # Check compatibility
         if not self.video_info.check_compatibility(video_files):
-            self.output_text.insert("end", "❌ Videos have different properties and can't be joined.\n")
+            self.output_text.insert("end", "Videos have different properties and can't be joined.\n")
             messagebox.showerror("Incompatible Videos", "Videos have different properties and can't be joined.")
             return
         

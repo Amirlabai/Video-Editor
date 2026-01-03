@@ -7,6 +7,7 @@ import subprocess
 import multiprocessing
 from typing import Tuple, Optional
 from ..ConfigManager import get_config_manager
+from ..VideoInfo import VideoInfo
 from ..constants import (
     HD_WIDTH, HD_HEIGHT, FHD_WIDTH, FHD_HEIGHT, UHD_4K_WIDTH, UHD_4K_HEIGHT,
     CRF_MIN, CRF_MAX, DEFAULT_CRF, HIGH_QUALITY_CRF, DEFAULT_PRESET, PRESET_OPTIONS,
@@ -16,15 +17,16 @@ from ..constants import (
 
 
 class SettingsDialog:
-    """Dialog for performance settings (GPU/CPU, threading)."""
+    """Dialog for performance settings (GPU/CPU, threading, FPS, CPU cap)."""
     
     @staticmethod
     def show(
         root,
         window_bg: str = '#1e1e1e',
         button_bg: str = '#323232',
-        active_button_bg: str = '#192332'
-    ) -> Tuple[bool, bool, int]:
+        active_button_bg: str = '#192332',
+        video_path: Optional[str] = None
+    ) -> Tuple[bool, bool, int, Optional[float], bool]:
         """Show performance settings dialog.
         
         Args:
@@ -32,9 +34,12 @@ class SettingsDialog:
             window_bg: Window background color
             button_bg: Button background color
             active_button_bg: Active button background color
+            video_path: Optional path to video file to extract FPS and size
             
         Returns:
-            Tuple of (use_gpu, use_all_cores, cpu_cores)
+            Tuple of (use_gpu, use_all_cores, cpu_cores, target_fps, cap_cpu_50)
+            - target_fps: None to keep current, or float value (12, 24, 30)
+            - cap_cpu_50: True to cap CPU usage at 50%
         """
         config = get_config_manager()
         default_use_gpu, default_use_all_cores = config.get_performance_settings()
@@ -43,59 +48,181 @@ class SettingsDialog:
         perf_window.configure(bg=window_bg)
         perf_window.title("Performance Settings")
         perf_window.grab_set()
+        perf_window.geometry("500x600")
         
         use_gpu = tk.BooleanVar(perf_window, value=default_use_gpu)
         use_all_cores = tk.BooleanVar(perf_window, value=default_use_all_cores)
+        cap_cpu_50 = tk.BooleanVar(perf_window, value=False)
         gpu_available = SettingsDialog._check_gpu_compatibility()
         cpu_cores = multiprocessing.cpu_count()
         
+        # Video info variables
+        current_fps = None
+        video_width = None
+        video_height = None
+        target_fps = [None]  # Use list to allow modification in nested functions
+        
+        # Extract video info if video path provided
+        if video_path:
+            video_info = VideoInfo()
+            fps_info = video_info.get_fps_and_size(video_path)
+            if fps_info:
+                current_fps, video_width, video_height = fps_info
+        
         def confirm_settings():
-            config.set_performance_settings(use_gpu.get(), use_all_cores.get())
+            config.set_performance_settings(use_gpu.get(), use_all_cores.get(), cap_cpu_50.get())
+            if target_fps[0] is not None:
+                config.set_target_fps(target_fps[0])
             perf_window.destroy()
+        
+        row = 0
+        
+        # Video info display
+        if video_path and current_fps is not None:
+            video_info_frame = tk.Frame(perf_window, bg=window_bg, relief=tk.RAISED, borderwidth=2)
+            video_info_frame.grid(row=row, column=0, columnspan=2, pady=10, padx=10, sticky="ew")
+            
+            video_info_label = tk.Label(video_info_frame, text="📹 Video Information", 
+                                       bg=window_bg, fg="white", font=("Arial", "12", "bold"))
+            video_info_label.pack(pady=5)
+            
+            fps_label = tk.Label(video_info_frame, text=f"Current FPS: {current_fps:.2f}", 
+                                bg=window_bg, fg="white", font=("Arial", "10"))
+            fps_label.pack(pady=2)
+            
+            size_label = tk.Label(video_info_frame, text=f"Video Size: {video_width}x{video_height}", 
+                                 bg=window_bg, fg="white", font=("Arial", "10"))
+            size_label.pack(pady=2)
+            
+            row += 1
+            
+            # FPS reduction options
+            fps_frame = tk.Frame(perf_window, bg=window_bg)
+            fps_frame.grid(row=row, column=0, columnspan=2, pady=10, padx=10, sticky="ew")
+            row += 1
+            
+            fps_title = tk.Label(fps_frame, text="Frame Rate (FPS) Reduction", 
+                                bg=window_bg, fg="white", font=("Arial", "12", "bold"))
+            fps_title.pack(pady=5)
+            
+            fps_desc = tk.Label(fps_frame, text="Select a lower FPS to reduce file size (only reduction allowed)", 
+                               bg=window_bg, fg="white", font=("Arial", "9"))
+            fps_desc.pack(pady=2)
+            
+            fps_buttons_frame = tk.Frame(fps_frame, bg=window_bg)
+            fps_buttons_frame.pack(pady=5)
+            
+            # Store buttons for state management
+            fps_buttons = []
+            
+            def set_fps(fps: Optional[float], selected_button: tk.Button):
+                target_fps[0] = fps
+                # Update button states - reset all, then highlight selected
+                for btn in fps_buttons:
+                    btn.config(relief=tk.RAISED)
+                selected_button.config(relief=tk.SUNKEN)
+            
+            # Keep current FPS button
+            keep_current_btn = tk.Button(fps_buttons_frame, text=f"Keep Current ({current_fps:.2f} fps)", 
+                                       command=lambda: set_fps(None, keep_current_btn),
+                                       bg=button_bg, fg="white", font=("Arial", "9", "bold"),
+                                       activebackground=active_button_bg, activeforeground="white", 
+                                       borderwidth=2, relief=tk.SUNKEN)
+            keep_current_btn.pack(side="left", padx=2)
+            fps_buttons.append(keep_current_btn)
+            target_fps[0] = None  # Default to keep current
+            
+            # Only show lower FPS options if current FPS is higher
+            if current_fps > 30:
+                fps_30_btn = tk.Button(fps_buttons_frame, text="30 fps", 
+                                      command=lambda: set_fps(30.0, fps_30_btn),
+                                      bg=button_bg, fg="white", font=("Arial", "9", "bold"),
+                                      activebackground=active_button_bg, activeforeground="white", 
+                                      borderwidth=2)
+                fps_30_btn.pack(side="left", padx=2)
+                fps_buttons.append(fps_30_btn)
+            
+            if current_fps > 24:
+                fps_24_btn = tk.Button(fps_buttons_frame, text="24 fps", 
+                                      command=lambda: set_fps(24.0, fps_24_btn),
+                                      bg=button_bg, fg="white", font=("Arial", "9", "bold"),
+                                      activebackground=active_button_bg, activeforeground="white", 
+                                      borderwidth=2)
+                fps_24_btn.pack(side="left", padx=2)
+                fps_buttons.append(fps_24_btn)
+            
+            if current_fps > 12:
+                fps_12_btn = tk.Button(fps_buttons_frame, text="12 fps", 
+                                      command=lambda: set_fps(12.0, fps_12_btn),
+                                      bg=button_bg, fg="white", font=("Arial", "9", "bold"),
+                                      activebackground=active_button_bg, activeforeground="white", 
+                                      borderwidth=2)
+                fps_12_btn.pack(side="left", padx=2)
+                fps_buttons.append(fps_12_btn)
         
         # GPU option
         if gpu_available:
             gpu_label = tk.Label(perf_window, text="🚀 GPU (NVENC) Available!", 
                                 bg=window_bg, fg="#4CAF50", font=("Arial", "12", "bold"))
-            gpu_label.grid(row=0, column=0, columnspan=2, pady=10, padx=10)
+            gpu_label.grid(row=row, column=0, columnspan=2, pady=10, padx=10)
+            row += 1
             
             gpu_checkbox = tk.Checkbutton(perf_window, text="Use GPU encoding (Much Faster!)", 
                                           variable=use_gpu, bg=window_bg, fg="white",
                                           selectcolor=active_button_bg, font=("Arial", "10", "bold"))
-            gpu_checkbox.grid(row=1, column=0, columnspan=2, pady=5, padx=10, sticky="w")
+            gpu_checkbox.grid(row=row, column=0, columnspan=2, pady=5, padx=10, sticky="w")
+            row += 1
         else:
             gpu_label = tk.Label(perf_window, text="⚠️ GPU (NVENC) Not Available", 
                                 bg=window_bg, fg="#FF9800", font=("Arial", "12", "bold"))
-            gpu_label.grid(row=0, column=0, columnspan=2, pady=10, padx=10)
+            gpu_label.grid(row=row, column=0, columnspan=2, pady=10, padx=10)
+            row += 1
             
             gpu_info = tk.Label(perf_window, text="Using CPU encoding", bg=window_bg, fg="white", 
                                font=("Arial", "9"))
-            gpu_info.grid(row=1, column=0, columnspan=2, pady=5, padx=10)
+            gpu_info.grid(row=row, column=0, columnspan=2, pady=5, padx=10)
+            row += 1
         
         # Threading option
         threading_label = tk.Label(perf_window, text="CPU Threading", bg=window_bg, fg="white", 
                                   font=("Arial", "12", "bold"))
-        threading_label.grid(row=2, column=0, columnspan=2, pady=(20, 5), padx=10)
+        threading_label.grid(row=row, column=0, columnspan=2, pady=(20, 5), padx=10)
+        row += 1
         
         cores_info = tk.Label(perf_window, text=f"Available CPU cores: {cpu_cores}", 
                              bg=window_bg, fg="white", font=("Arial", "9"))
-        cores_info.grid(row=3, column=0, columnspan=2, pady=5, padx=10)
+        cores_info.grid(row=row, column=0, columnspan=2, pady=5, padx=10)
+        row += 1
         
         threading_checkbox = tk.Checkbutton(perf_window, 
                                             text=f"Use all CPU cores (Default: FFmpeg auto, All cores: {cpu_cores} threads)", 
                                             variable=use_all_cores, bg=window_bg, fg="white",
                                             selectcolor=active_button_bg, font=("Arial", "10", "bold"))
-        threading_checkbox.grid(row=4, column=0, columnspan=2, pady=5, padx=10, sticky="w")
+        threading_checkbox.grid(row=row, column=0, columnspan=2, pady=5, padx=10, sticky="w")
+        row += 1
+        
+        # CPU cap option
+        cpu_cap_label = tk.Label(perf_window, text="CPU Usage Limit", bg=window_bg, fg="white", 
+                                 font=("Arial", "12", "bold"))
+        cpu_cap_label.grid(row=row, column=0, columnspan=2, pady=(20, 5), padx=10)
+        row += 1
+        
+        cpu_cap_checkbox = tk.Checkbutton(perf_window, 
+                                          text="Cap CPU usage at 50% (slower but uses less resources)", 
+                                          variable=cap_cpu_50, bg=window_bg, fg="white",
+                                          selectcolor=active_button_bg, font=("Arial", "10", "bold"))
+        cpu_cap_checkbox.grid(row=row, column=0, columnspan=2, pady=5, padx=10, sticky="w")
+        row += 1
         
         # Confirm button
         confirm_button = tk.Button(perf_window, text="Confirm", command=confirm_settings, 
                                   bg=button_bg, fg="white", font=("Arial", "10", "bold"),
                                   activebackground=active_button_bg, activeforeground="white", borderwidth=2)
-        confirm_button.grid(row=5, column=0, columnspan=2, pady=20, padx=10)
+        confirm_button.grid(row=row, column=0, columnspan=2, pady=20, padx=10)
         
         perf_window.wait_window()
         
-        return use_gpu.get(), use_all_cores.get(), cpu_cores
+        return use_gpu.get(), use_all_cores.get(), cpu_cores, target_fps[0], cap_cpu_50.get()
     
     @staticmethod
     def _check_gpu_compatibility() -> bool:
@@ -116,7 +243,9 @@ class ResolutionDialog:
         root,
         window_bg: str = '#1e1e1e',
         button_bg: str = '#323232',
-        active_button_bg: str = '#192332'
+        active_button_bg: str = '#192332',
+        video_path: Optional[str] = None,
+        is_vertical: bool = False
     ) -> Tuple[str, str]:
         """Show resolution selection dialog.
         
@@ -125,16 +254,38 @@ class ResolutionDialog:
             window_bg: Window background color
             button_bg: Button background color
             active_button_bg: Active button background color
+            video_path: Optional path to video file to extract default dimensions
+            is_vertical: Whether this is for vertical orientation (will flip dimensions on return)
             
         Returns:
             Tuple of (width, height) as strings
+            If is_vertical is True, the dimensions are flipped (height, width)
         """
         res_window = tk.Toplevel(root)
         res_window.configure(bg=window_bg)
         res_window.title("Video Resolution")
         res_window.grab_set()
         
+        # Extract video dimensions if video path provided
+        default_width = None
+        default_height = None
+        if video_path:
+            video_info = VideoInfo()
+            fps_info = video_info.get_fps_and_size(video_path)
+            if fps_info:
+                _, default_width, default_height = fps_info
+        
         selected_res = [None, None]
+        
+        def set_original():
+            """Use original video dimensions."""
+            if default_width and default_height:
+                selected_res[0] = str(default_width)
+                selected_res[1] = str(default_height)
+            else:
+                selected_res[0] = str(HD_WIDTH)
+                selected_res[1] = str(HD_HEIGHT)
+            res_window.destroy()
         
         def set_hd():
             selected_res[0] = str(HD_WIDTH)
@@ -155,6 +306,14 @@ class ResolutionDialog:
                         font=("Arial", "16", "bold"))
         label.pack(pady=10)
         
+        # Show "Use Original" button if we have video dimensions
+        if default_width and default_height:
+            original_button = tk.Button(res_window, text=f"Use Original: {default_width}x{default_height}", 
+                                       command=set_original,
+                                       bg=button_bg, fg="white", font=("Arial", "10", "bold"),
+                                       activebackground=active_button_bg, activeforeground="white", borderwidth=2)
+            original_button.pack(pady=5)
+        
         hd_button = tk.Button(res_window, text=f"HD: {HD_WIDTH}x{HD_HEIGHT}", command=set_hd,
                              bg=button_bg, fg="white", font=("Arial", "10", "bold"),
                              activebackground=active_button_bg, activeforeground="white", borderwidth=2)
@@ -173,8 +332,18 @@ class ResolutionDialog:
         res_window.wait_window()
         
         if selected_res[0] is None:
-            return str(HD_WIDTH), str(HD_HEIGHT)
-        return selected_res[0], selected_res[1]
+            # Return default dimensions if available, otherwise HD
+            if default_width and default_height:
+                width, height = str(default_width), str(default_height)
+            else:
+                width, height = str(HD_WIDTH), str(HD_HEIGHT)
+        else:
+            width, height = selected_res[0], selected_res[1]
+        
+        # If vertical orientation, flip width and height on return
+        if is_vertical:
+            return height, width
+        return width, height
 
 
 class CRFDialog:
@@ -288,7 +457,8 @@ class EncodingSettingsDialog:
         root,
         window_bg: str = '#1e1e1e',
         button_bg: str = '#323232',
-        active_button_bg: str = '#192332'
+        active_button_bg: str = '#192332',
+        video_path: Optional[str] = None
     ) -> Tuple[bool, str, str, str, str, str]:
         """Show encoding settings dialog (replaces get_ratio).
         
@@ -297,6 +467,7 @@ class EncodingSettingsDialog:
             window_bg: Window background color
             button_bg: Button background color
             active_button_bg: Active button background color
+            video_path: Optional path to video file to extract default dimensions
             
         Returns:
             Tuple of (is_vertical, orientation, width, height, crf, preset)
@@ -312,11 +483,20 @@ class EncodingSettingsDialog:
         settings_window.title("Encoding Settings")
         settings_window.grab_set()
         
-        # Default values
+        # Extract video dimensions if video path provided
+        default_width = HD_WIDTH
+        default_height = HD_HEIGHT
+        if video_path:
+            video_info = VideoInfo()
+            fps_info = video_info.get_fps_and_size(video_path)
+            if fps_info:
+                _, default_width, default_height = fps_info
+        
+        # Default values - use video dimensions if available
         orientation = ["_horizontal"]  # Use list to allow modification in nested functions
         is_vertical = [False]
-        width = [str(HD_WIDTH)]
-        height = [str(HD_HEIGHT)]
+        width = [str(default_width)]
+        height = [str(default_height)]
         crf_value = [str(DEFAULT_CRF)]
         preset_value = [DEFAULT_PRESET]
         dialog_completed = [False]
@@ -326,9 +506,10 @@ class EncodingSettingsDialog:
             orientation[0] = "_horizontal"
             is_vertical[0] = False
             
-            # Get resolution
+            # Get resolution - pass video path so dialog can extract dimensions
             res_width, res_height = ResolutionDialog.show(
-                settings_window, window_bg, button_bg, active_button_bg
+                settings_window, window_bg, button_bg, active_button_bg,
+                video_path=video_path, is_vertical=False
             )
             width[0] = res_width
             height[0] = res_height
@@ -351,10 +532,13 @@ class EncodingSettingsDialog:
             orientation[0] = "_vertical"
             is_vertical[0] = True
             
-            # Get resolution
+            # Get resolution - pass video path so dialog can extract dimensions
+            # ResolutionDialog will flip them on return since is_vertical=True
             res_width, res_height = ResolutionDialog.show(
-                settings_window, window_bg, button_bg, active_button_bg
+                settings_window, window_bg, button_bg, active_button_bg,
+                video_path=video_path, is_vertical=True
             )
+            # ResolutionDialog already flipped the dimensions for vertical orientation
             width[0] = res_width
             height[0] = res_height
             
@@ -372,11 +556,11 @@ class EncodingSettingsDialog:
             settings_window.destroy()
         
         def use_defaults():
-            """Use default settings."""
+            """Use default settings (original video dimensions)."""
             orientation[0] = "_horizontal"
             is_vertical[0] = False
-            width[0] = str(HD_WIDTH)
-            height[0] = str(HD_HEIGHT)
+            width[0] = str(default_width)
+            height[0] = str(default_height)
             crf_value[0] = str(DEFAULT_CRF)
             preset_value[0] = DEFAULT_PRESET
             dialog_completed[0] = True
@@ -414,9 +598,9 @@ class EncodingSettingsDialog:
         
         settings_window.wait_window()
         
-        # If closed without selection, return defaults
+        # If closed without selection, return defaults (original video dimensions if available)
         if not dialog_completed[0]:
-            return False, "_horizontal", str(HD_WIDTH), str(HD_HEIGHT), str(DEFAULT_CRF), DEFAULT_PRESET
+            return False, "_horizontal", str(default_width), str(default_height), str(DEFAULT_CRF), DEFAULT_PRESET
         
         return is_vertical[0], orientation[0], width[0], height[0], crf_value[0], preset_value[0]
 

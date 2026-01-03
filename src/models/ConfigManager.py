@@ -37,7 +37,11 @@ class ConfigManager:
             "performance": {
                 "use_gpu": False,
                 "use_all_cores": False,
-                "cpu_cores": 0  # Will be set dynamically
+                "cpu_cores": 0,  # Will be set dynamically
+                "cap_cpu_50": False
+            },
+            "video": {
+                "target_fps": None  # None to keep current, or float value
             },
             "encoding": {
                 "default_crf": DEFAULT_CRF,
@@ -143,13 +147,32 @@ class ConfigManager:
             perf.get("use_all_cores", False)
         )
     
-    def set_performance_settings(self, use_gpu: bool, use_all_cores: bool) -> None:
+    def set_performance_settings(self, use_gpu: bool, use_all_cores: bool, cap_cpu_50: bool = False) -> None:
         """Set performance settings."""
         if "performance" not in self.config:
             self.config["performance"] = {}
         self.config["performance"]["use_gpu"] = use_gpu
         self.config["performance"]["use_all_cores"] = use_all_cores
+        self.config["performance"]["cap_cpu_50"] = cap_cpu_50
         self._save_config()
+    
+    def get_cpu_cap_setting(self) -> bool:
+        """Get CPU cap setting."""
+        perf = self.config.get("performance", {})
+        return perf.get("cap_cpu_50", False)
+    
+    def set_target_fps(self, target_fps: Optional[float]) -> None:
+        """Set target FPS setting."""
+        if "video" not in self.config:
+            self.config["video"] = {}
+        self.config["video"]["target_fps"] = target_fps
+        self._save_config()
+    
+    def get_target_fps(self) -> Optional[float]:
+        """Get target FPS setting."""
+        video = self.config.get("video", {})
+        fps = video.get("target_fps")
+        return float(fps) if fps is not None else None
     
     # Encoding Settings
     def get_encoding_settings(self) -> Tuple[str, str, str]:

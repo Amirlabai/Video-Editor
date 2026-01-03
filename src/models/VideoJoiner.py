@@ -100,11 +100,11 @@ class VideoJoiner:
             )
             self._current_process = process
 
-            output_text.insert("end", "\n🚀 Starting FFmpeg to join videos...\n")
+            output_text.insert("end", "\nStarting FFmpeg to join videos...\n")
             output_text.see("end")
 
             progress_line_index = output_text.index("end")
-            output_text.insert("end", f"🟢 [0/{total_files}] Progress: Starting...\n")
+            output_text.insert("end", f"[0/{total_files}] Progress: Starting...\n")
             output_text.see("end")
 
             start_time = time.perf_counter()
@@ -119,14 +119,14 @@ class VideoJoiner:
                         process.wait(timeout=PROCESS_TERMINATION_TIMEOUT)
                     except subprocess.TimeoutExpired:
                         process.kill()
-                    output_text.insert("end", "\n⚠️ Operation cancelled by user\n")
+                    output_text.insert("end", "\nOperation cancelled by user\n")
                     output_text.see("end")
                     self._current_process = None
                     # Clean up partial output file
                     if os.path.exists(output_file):
                         try:
                             os.remove(output_file)
-                            output_text.insert("end", f"\n🗑️ Partial output file removed.\n")
+                            output_text.insert("end", f"\nPartial output file removed.\n")
                         except Exception:
                             pass
                     # Close window after showing cancellation message
@@ -146,7 +146,7 @@ class VideoJoiner:
                     percentage = (elapsed_total_time / estimated_total_time) * 100 if estimated_total_time else 0
                     i = (i + 1) % 10
 
-                    progress_message = f"🟢 [~/{total_files}] Progress: {percentage:.2f}% elapsed."
+                    progress_message = f"[~/{total_files}] Progress: {percentage:.2f}% elapsed."
                     output_text.delete(progress_line_index, f"{progress_line_index} lineend")
                     output_text.insert(progress_line_index, progress_message)
                     output_text.see("end")
@@ -158,13 +158,13 @@ class VideoJoiner:
                 return
 
             if process.returncode == 0:
-                output_text.insert("end", f"\n✅ Successfully joined videos into: {output_file}\n")
+                output_text.insert("end", f"\nSuccessfully joined videos into: {output_file}\n")
             else:
-                output_text.insert("end", "\n❌ FFmpeg failed! Check the output above for details.\n")
+                output_text.insert("end", "\nFFmpeg failed! Check the output above for details.\n")
 
             output_text.see("end")
             root.after(1000, lambda: (
-                __import__('tkinter.messagebox').showinfo("Done", "✅ All videos have been joined!"),
+                __import__('tkinter.messagebox').showinfo("Done", "All videos have been joined!"),
                 root.destroy()
             ))
 
@@ -175,7 +175,7 @@ class VideoJoiner:
             )
         except Exception as e:
             self._current_process = None
-            output_text.insert("end", f"\n❌ Error: {str(e)}\n")
+            output_text.insert("end", f"\nError: {str(e)}\n")
             output_text.see("end")
     
     def get_video_files(self, folder_path: str) -> List[str]:

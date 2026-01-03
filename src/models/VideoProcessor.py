@@ -97,7 +97,7 @@ class VideoProcessor:
                     process.wait(timeout=PROCESS_TERMINATION_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     process.kill()
-                output_text.insert("end", "\n⚠️ Operation cancelled by user\n")
+                output_text.insert("end", "\nOperation cancelled by user\n")
                 output_text.see("end")
                 return -1, error_list
             
@@ -133,7 +133,7 @@ class VideoProcessor:
                     minutes, seconds = divmod(minutes, 60)
                     percent = (frames / total_frames) * 100
                     progress_message = (
-                        f"🟢 Progress: {frames}/{total_frames} frames ({percent:.2f}%) "
+                        f"Progress: {frames}/{total_frames} frames ({percent:.2f}%) "
                         f"avg frame: {avg_frame} | Running: {(now - tot_time)/60:.2f} - "
                         f"Remaining: {hours:02}:{minutes:02}:{seconds:02}"
                     )
@@ -161,7 +161,8 @@ class VideoProcessor:
         yaxis: str = str(HD_HEIGHT),
         crf: str = DEFAULT_CRF,
         preset: str = DEFAULT_PRESET,
-        threads: int = 0
+        threads: int = 0,
+        fps: Optional[float] = None
     ) -> None:
         """Scale video using CPU encoding.
         
@@ -177,12 +178,13 @@ class VideoProcessor:
             crf: Constant Rate Factor
             preset: Encoding preset
             threads: Number of threads (0 = auto)
+            fps: Target FPS (None to keep current)
         """
         self._cancel_requested = False
         
         # Build FFmpeg command
         ffmpeg_cmd = FFmpegCommandBuilder.build_scale_command_cpu(
-            input_file, output_file, xaxis, yaxis, crf, preset, threads
+            input_file, output_file, xaxis, yaxis, crf, preset, threads, fps=fps
         )
         
         error_list: List[str] = []
@@ -199,12 +201,12 @@ class VideoProcessor:
             self._current_process = process
 
             threading_info = f" with {threads} threads" if threads > 0 else " (auto threading)"
-            output_text.insert("end", f"🚀 Starting FFmpeg{threading_info}...\n")
+            output_text.insert("end", f"Starting FFmpeg{threading_info}...\n")
             output_text.see("end")
 
             # Placeholder for progress line
             progress_line_index = output_text.index("end")
-            output_text.insert("end", f"🟢 {input_file} Starting...\n")
+            output_text.insert("end", f"{input_file} Starting...\n")
             output_text.see("end")
 
             # Process FFmpeg output and track progress
@@ -222,10 +224,10 @@ class VideoProcessor:
                     try:
                         os.remove(output_file)
                         logger.info(f"Removed partial output file: {output_file}")
-                        output_text.insert("end", f"\n🗑️ Partial output file removed.\n")
+                        output_text.insert("end", f"\nPartial output file removed.\n")
                     except Exception as e:
                         logger.warning(f"Could not remove partial file: {e}")
-                output_text.insert("end", f"\n⚠️ Operation cancelled by user.\n")
+                output_text.insert("end", f"\nOperation cancelled by user.\n")
                 output_text.see("end")
                 # Close window after showing cancellation message
                 root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
@@ -235,7 +237,7 @@ class VideoProcessor:
                 return
             
             # Handle errors and success
-            self._handle_process_result(process, return_code, error_list, output_file, output_text, root)
+            self._handle_process_result(process, return_code, error_list, output_file, output_text, root, input_file)
             
         except FileNotFoundError:
             self._current_process = None
@@ -245,7 +247,7 @@ class VideoProcessor:
         except Exception as e:
             self._current_process = None
             logger.error(f"Error during CPU encoding: {e}")
-            output_text.insert("end", f"\n❌ Error: {str(e)}\n")
+            output_text.insert("end", f"\nError: {str(e)}\n")
             output_text.see("end")
     
     def scale_video_gpu(
@@ -259,7 +261,8 @@ class VideoProcessor:
         xaxis: str = str(HD_WIDTH),
         yaxis: str = str(HD_HEIGHT),
         crf: str = DEFAULT_CRF,
-        preset: str = DEFAULT_PRESET
+        preset: str = DEFAULT_PRESET,
+        fps: Optional[float] = None
     ) -> None:
         """Scale video using GPU encoding (NVENC).
         
@@ -274,12 +277,13 @@ class VideoProcessor:
             yaxis: Output height
             crf: Constant Rate Factor
             preset: Encoding preset
+            fps: Target FPS (None to keep current)
         """
         self._cancel_requested = False
         
         # Build FFmpeg command
         ffmpeg_cmd = FFmpegCommandBuilder.build_scale_command_gpu(
-            input_file, output_file, xaxis, yaxis, crf, preset
+            input_file, output_file, xaxis, yaxis, crf, preset, fps=fps
         )
         
         error_list: List[str] = []
@@ -295,12 +299,12 @@ class VideoProcessor:
             )
             self._current_process = process
 
-            output_text.insert("end", "🚀 Starting FFmpeg with GPU acceleration (NVENC)...\n")
+            output_text.insert("end", "Starting FFmpeg with GPU acceleration (NVENC)...\n")
             output_text.see("end")
 
             # Placeholder for progress line
             progress_line_index = output_text.index("end")
-            output_text.insert("end", f"🟢 {input_file} Starting...\n")
+            output_text.insert("end", f"{input_file} Starting...\n")
             output_text.see("end")
 
             # Process FFmpeg output and track progress
@@ -318,10 +322,10 @@ class VideoProcessor:
                     try:
                         os.remove(output_file)
                         logger.info(f"Removed partial output file: {output_file}")
-                        output_text.insert("end", f"\n🗑️ Partial output file removed.\n")
+                        output_text.insert("end", f"\nPartial output file removed.\n")
                     except Exception as e:
                         logger.warning(f"Could not remove partial file: {e}")
-                output_text.insert("end", f"\n⚠️ Operation cancelled by user.\n")
+                output_text.insert("end", f"\nOperation cancelled by user.\n")
                 output_text.see("end")
                 # Close window after showing cancellation message
                 root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
@@ -340,7 +344,7 @@ class VideoProcessor:
             if nvenc_dll_error:
                 # GPU error - fallback to CPU
                 logger.warning("NVENC DLL error detected, falling back to CPU encoding")
-                output_text.insert("end", "\n⚠️ GPU encoding failed, falling back to CPU...\n")
+                output_text.insert("end", "\nGPU encoding failed, falling back to CPU...\n")
                 output_text.see("end")
                 # Remove failed GPU output and retry with CPU
                 if os.path.exists(output_file):
@@ -353,7 +357,7 @@ class VideoProcessor:
                     ratio, xaxis, yaxis, crf, preset, threads=0
                 )
             else:
-                self._handle_process_result(process, return_code, error_list, output_file, output_text, root)
+                self._handle_process_result(process, return_code, error_list, output_file, output_text, root, input_file)
             
         except FileNotFoundError:
             self._current_process = None
@@ -363,8 +367,27 @@ class VideoProcessor:
         except Exception as e:
             self._current_process = None
             logger.error(f"Error during GPU encoding: {e}")
-            output_text.insert("end", f"\n❌ Error: {str(e)}\n")
+            output_text.insert("end", f"\nError: {str(e)}\n")
             output_text.see("end")
+    
+    @staticmethod
+    def format_file_size(size_bytes: int) -> str:
+        """Format file size in bytes to human-readable format.
+        
+        Args:
+            size_bytes: File size in bytes
+            
+        Returns:
+            Formatted string (e.g., "1.5 MB", "500 KB")
+        """
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.2f} KB"
+        elif size_bytes < 1024 * 1024 * 1024:
+            return f"{size_bytes / (1024 * 1024):.2f} MB"
+        else:
+            return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
     
     def _handle_process_result(
         self,
@@ -373,7 +396,8 @@ class VideoProcessor:
         error_list: List[str],
         output_file: str,
         output_text,
-        root
+        root,
+        input_file: Optional[str] = None
     ) -> None:
         """Handle the result of a video processing operation.
         
@@ -384,21 +408,43 @@ class VideoProcessor:
             output_file: Output file path
             output_text: Tkinter Text widget
             root: Tkinter root window
+            input_file: Input file path (optional, for size comparison)
         """
         from tkinter import messagebox
         from .constants import SUCCESS_MESSAGE_DELAY
         
         if return_code == 0:
-            output_text.insert("end", f"\n✅ Successfully processed: {output_file}\n")
+            output_text.insert("end", f"\nSuccessfully processed: {output_file}\n")
+            
+            # Show file size comparison if input file is provided
+            if input_file and os.path.exists(input_file) and os.path.exists(output_file):
+                try:
+                    input_size = os.path.getsize(input_file)
+                    output_size = os.path.getsize(output_file)
+                    size_reduction = input_size - output_size
+                    reduction_percent = (size_reduction / input_size * 100) if input_size > 0 else 0
+                    
+                    output_text.insert("end", f"\nFile Size Comparison:\n")
+                    output_text.insert("end", f"  Input:  {self.format_file_size(input_size)}\n")
+                    output_text.insert("end", f"  Output: {self.format_file_size(output_size)}\n")
+                    if reduction_percent > 0:
+                        output_text.insert("end", f"  Reduction: {self.format_file_size(size_reduction)} ({reduction_percent:.1f}% smaller)\n")
+                    elif reduction_percent < 0:
+                        output_text.insert("end", f"  Increase: {self.format_file_size(abs(size_reduction))} ({abs(reduction_percent):.1f}% larger)\n")
+                    else:
+                        output_text.insert("end", f"  No size change\n")
+                except Exception as e:
+                    logger.warning(f"Could not get file sizes: {e}")
+            
             if error_list:
-                output_text.insert("end", f"\n⚠️ Warnings detected: {len(error_list)} warning(s)\n")
+                output_text.insert("end", f"\nWarnings detected: {len(error_list)} warning(s)\n")
                 for error in error_list[:5]:  # Show first 5 errors
                     output_text.insert("end", f"  - {error}\n")
                 if len(error_list) > 5:
                     output_text.insert("end", f"  ... and {len(error_list) - 5} more\n")
         else:
             error_msg = self._get_ffmpeg_error_code(return_code)
-            output_text.insert("end", f"\n❌ FFmpeg failed with return code {return_code}: {error_msg}\n")
+            output_text.insert("end", f"\nFFmpeg failed with return code {return_code}: {error_msg}\n")
             if error_list:
                 output_text.insert("end", "\nErrors detected:\n")
                 for error in error_list:
@@ -406,7 +452,7 @@ class VideoProcessor:
         
         output_text.see("end")
         root.after(SUCCESS_MESSAGE_DELAY, lambda: (
-            messagebox.showinfo("Done", "✅ Video processing completed!"),
+            messagebox.showinfo("Done", "Video processing completed!"),
             root.destroy()
         ))
     

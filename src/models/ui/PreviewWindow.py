@@ -76,7 +76,7 @@ class PreviewWindow:
         self.preview_text.insert("end", "=" * 60 + "\n\n")
         
         # File path
-        self.preview_text.insert("end", f"📂 File: {self.video_path}\n\n")
+        self.preview_text.insert("end", f"File: {self.video_path}\n\n")
         
         # Get video metadata
         video_metadata = self.video_info.get_video_info(self.video_path)
@@ -84,7 +84,7 @@ class PreviewWindow:
         
         if video_metadata:
             codec, width, height, framerate = video_metadata
-            self.preview_text.insert("end", "📊 Video Properties:\n")
+            self.preview_text.insert("end", "Video Properties:\n")
             self.preview_text.insert("end", f"  • Codec: {codec}\n")
             self.preview_text.insert("end", f"  • Resolution: {width}x{height}\n")
             self.preview_text.insert("end", f"  • Frame Rate: {framerate}\n")
@@ -92,7 +92,7 @@ class PreviewWindow:
                 self.preview_text.insert("end", f"  • Total Frames: {total_frames:,}\n")
             self.preview_text.insert("end", "\n")
         else:
-            self.preview_text.insert("end", "⚠️ Could not read video metadata\n\n")
+            self.preview_text.insert("end", "Could not read video metadata\n\n")
         
         # Encoding settings preview
         if self.encoding_settings:
@@ -102,15 +102,15 @@ class PreviewWindow:
             
             # Resolution
             if "width" in self.encoding_settings and "height" in self.encoding_settings:
-                self.preview_text.insert("end", f"📐 Output Resolution: {self.encoding_settings['width']}x{self.encoding_settings['height']}\n")
+                self.preview_text.insert("end", f"Output Resolution: {self.encoding_settings['width']}x{self.encoding_settings['height']}\n")
             
             # Quality
             if "crf" in self.encoding_settings:
-                self.preview_text.insert("end", f"🎨 Quality (CRF): {self.encoding_settings['crf']}\n")
+                self.preview_text.insert("end", f"Quality (CRF): {self.encoding_settings['crf']}\n")
             
             # Preset
             if "preset" in self.encoding_settings:
-                self.preview_text.insert("end", f"⚙️ Preset: {self.encoding_settings['preset']}\n")
+                self.preview_text.insert("end", f"Preset: {self.encoding_settings['preset']}\n")
             
             # Codec
             if "video_codec" in self.encoding_settings:

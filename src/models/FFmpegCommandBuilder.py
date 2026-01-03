@@ -24,7 +24,8 @@ class FFmpegCommandBuilder:
         threads: int = 0,
         video_codec: str = CPU_CODEC,
         audio_codec: str = DEFAULT_AUDIO_CODEC,
-        audio_bitrate: str = DEFAULT_AUDIO_BITRATE
+        audio_bitrate: str = DEFAULT_AUDIO_BITRATE,
+        fps: Optional[float] = None
     ) -> List[str]:
         """Build FFmpeg command for CPU-based video scaling.
         
@@ -36,13 +37,23 @@ class FFmpegCommandBuilder:
             crf: Constant Rate Factor (quality setting)
             preset: Encoding preset
             threads: Number of threads (0 = auto)
+            fps: Target FPS (None to keep current)
             
         Returns:
             List of command arguments
         """
+        # Build video filter with scale
+        vf_parts = [f"scale={xaxis}:{yaxis}"]
+        
+        # Add FPS filter if specified
+        if fps is not None:
+            vf_parts.append(f"fps={fps}")
+        
+        vf_string = ",".join(vf_parts)
+        
         cmd = [
             "ffmpeg", "-i", input_file,
-            "-vf", f"scale={xaxis}:{yaxis}",
+            "-vf", vf_string,
             "-c:v", video_codec,
             "-crf", crf,
             "-preset", preset,
@@ -71,7 +82,8 @@ class FFmpegCommandBuilder:
         preset: str = DEFAULT_PRESET,
         video_codec: str = GPU_CODEC,
         audio_codec: str = DEFAULT_AUDIO_CODEC,
-        audio_bitrate: str = DEFAULT_AUDIO_BITRATE
+        audio_bitrate: str = DEFAULT_AUDIO_BITRATE,
+        fps: Optional[float] = None
     ) -> List[str]:
         """Build FFmpeg command for GPU-based video scaling (NVENC).
         
@@ -82,20 +94,27 @@ class FFmpegCommandBuilder:
             yaxis: Output height
             crf: Constant Rate Factor (quality setting)
             preset: Encoding preset
+            fps: Target FPS (None to keep current)
             
         Returns:
             List of command arguments
         """
-        # Use scale_cuda for NVENC codecs, regular scale for others
+        # Build video filter with scale
         if "nvenc" in video_codec:
-            scale_filter = f"scale_cuda={xaxis}:{yaxis}"
+            vf_parts = [f"scale_cuda={xaxis}:{yaxis}"]
         else:
-            scale_filter = f"scale={xaxis}:{yaxis}"
+            vf_parts = [f"scale={xaxis}:{yaxis}"]
+        
+        # Add FPS filter if specified
+        if fps is not None:
+            vf_parts.append(f"fps={fps}")
+        
+        vf_string = ",".join(vf_parts)
         
         return [
             "ffmpeg", "-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
             "-i", input_file,
-            "-vf", scale_filter,
+            "-vf", vf_string,
             "-c:v", video_codec,
             "-cq", crf,
             "-preset", preset,
