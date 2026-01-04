@@ -196,6 +196,36 @@ class VideoInfo:
             logger.error(f"Error getting total frames for {video_path}: {e}")
             return None
     
+    def get_duration(self, video_path: Optional[str] = None) -> Optional[float]:
+        """Get video duration in seconds.
+        
+        Args:
+            video_path: Optional path to video file (uses self.video_path if not provided)
+            
+        Returns:
+            Duration in seconds, or None if extraction fails
+        """
+        path = video_path or self.video_path
+        if not path:
+            return None
+        
+        try:
+            cmd = [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            duration_str = result.stdout.strip()
+            if duration_str:
+                return float(duration_str)
+            return None
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError) as e:
+            logger.error(f"Error getting duration for {path}: {e}")
+            return None
+    
     # Convenience methods for backward compatibility and easy access
     def get_total_frames(self, video_path: Optional[str] = None) -> Optional[int]:
         """Get total frames. Uses stored value if available, otherwise extracts from video_path.

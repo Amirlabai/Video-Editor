@@ -51,28 +51,48 @@ class VideoProcessor:
         total_frames: Optional[int],
         error_list: List[str],
         input_file: str,
-        root=None
+        root=None,
+        target_fps: Optional[float] = None,
+        input_duration: Optional[float] = None
     ) -> Tuple[int, List[str]]:
         """Process FFmpeg stdout output, track progress, and capture errors.
+        
+        Uses FFmpeg's structured progress output for accurate tracking, especially
+        when FPS changes affect the total output frame count.
         
         Args:
             process: FFmpeg subprocess
             progress_labels: Dictionary of Tkinter Label widgets for progress updates (or None for text widget mode)
             status_text: Tkinter Text widget for status/error messages
-            total_frames: Total number of frames (None if unknown)
+            total_frames: Total number of frames from input (used as fallback if output frames unknown)
             error_list: List to append errors to
             input_file: Input file path for logging
+            root: Tkinter root window
+            target_fps: Target FPS for output (None to keep current)
+            input_duration: Input video duration in seconds (for calculating output frames when FPS changes)
             
         Returns:
             Tuple of (return_code, error_list)
         """
         start_time = time.perf_counter()
         tot_time = start_time
-        prev_frames = 0
-        prev_time = start_time
-        fps_samples = []  # Store FPS samples for averaging
-        max_samples = 50  # Keep last 50 samples for rolling average
-        current_fps = 0.0
+        
+        # Progress tracking state
+        current_frame = 0
+        encoding_fps = 0.0  # FFmpeg's encoding speed (frames/second)
+        output_duration = None  # Calculated output duration from FFmpeg
+        
+        # Calculate expected output frames if FPS is being changed
+        output_total_frames = total_frames  # Default to input frames
+        if target_fps is not None and input_duration is not None:
+            # When FPS changes, output will have different frame count
+            output_total_frames = int(input_duration * target_fps)
+        elif target_fps is not None and total_frames is not None:
+            # Fallback: estimate from input frames and FPS ratio
+            # This is less accurate but better than nothing
+            if hasattr(self, '_input_fps') and self._input_fps and self._input_fps > 0:
+                fps_ratio = target_fps / self._input_fps
+                output_total_frames = int(total_frames * fps_ratio)
         
         error_patterns = [
             r'\[error\]', r'Error', r'error', r'ERROR',
@@ -88,6 +108,8 @@ class VideoProcessor:
             r'Function not implemented', r'function not implemented'
         ]
 
+        # Parse FFmpeg's structured progress output
+        progress_data = {}
         for line in process.stdout:
             # Check for cancellation
             if self._cancel_requested:
@@ -105,68 +127,100 @@ class VideoProcessor:
                         pass  # Widget may have been destroyed
                 return -1, error_list
             
-            # Check for error patterns
+            # Check for error patterns (in stderr lines that may be mixed in)
             for pattern in error_patterns:
                 if re.search(pattern, line, re.IGNORECASE):
                     error_list.append(line.strip())
                     break
             
-            # Track progress
-            match = re.search(r"frame=\s*(\d+)", line)
-            if match:
-                frames = int(match.group(1))
-                if total_frames:
-                    now = time.perf_counter()
-                    
-                    # Calculate FPS: frames per second
-                    if prev_frames > 0 and prev_time > 0:
-                        frame_diff = frames - prev_frames
-                        time_diff = now - prev_time
-                        
-                        if time_diff > 0:
-                            # Calculate instantaneous FPS
-                            instant_fps = frame_diff / time_diff
-                            
-                            # Add to samples for rolling average
-                            fps_samples.append(instant_fps)
-                            if len(fps_samples) > max_samples:
-                                fps_samples.pop(0)  # Remove oldest sample
-                            
-                            # Calculate average FPS
-                            current_fps = self._average_list(fps_samples)
-                    
-                    # Calculate remaining time based on current FPS
-                    if current_fps > 0:
-                        remaining_frames = total_frames - frames
-                        remaining_time = remaining_frames / current_fps
-                    else:
-                        remaining_time = 0
-                    
-                    remaining_time = int(remaining_time)
-                    hours, minutes = divmod(remaining_time, 3600)
-                    minutes, seconds = divmod(minutes, 60)
-                    percent = (frames / total_frames) * 100
-                    
-                    # Update progress labels if available (thread-safe)
-                    if progress_labels and root:
-                        def update_progress(f=frames, tf=total_frames, p=percent, cf=current_fps, tr=(now - tot_time)/60, rem=f"{hours:02}:{minutes:02}:{seconds:02}"):
-                            try:
-                                if "Frames Processed:" in progress_labels:
-                                    progress_labels["Frames Processed:"].config(text=f"{f}/{tf}")
-                                if "Progress:" in progress_labels:
-                                    progress_labels["Progress:"].config(text=f"{p:.2f}%")
-                                if "Average Frame Rate:" in progress_labels:
-                                    progress_labels["Average Frame Rate:"].config(text=f"{cf:.1f} fps")
-                                if "Time Running:" in progress_labels:
-                                    progress_labels["Time Running:"].config(text=f"{tr:.2f} min")
-                                if "Time Remaining:" in progress_labels:
-                                    progress_labels["Time Remaining:"].config(text=rem)
-                            except:
-                                pass  # Widget may have been destroyed
-                        root.after(0, update_progress)
-
-                    prev_frames = frames
-                    prev_time = now
+            # Parse FFmpeg progress output (key=value format)
+            # Progress output is separated by newlines, each line is key=value
+            line = line.strip()
+            if '=' in line and not line.startswith('ffmpeg') and not line.startswith('Input'):
+                try:
+                    key, value = line.split('=', 1)
+                    progress_data[key] = value
+                except ValueError:
+                    pass
+            
+            # Check if we have a complete progress update (when we see 'progress=continue' or 'progress=end')
+            if 'progress' in progress_data:
+                now = time.perf_counter()
+                
+                # Extract progress information
+                if 'frame' in progress_data:
+                    try:
+                        current_frame = int(progress_data['frame'])
+                    except (ValueError, TypeError):
+                        pass
+                
+                if 'fps' in progress_data:
+                    try:
+                        encoding_fps = float(progress_data['fps'])
+                    except (ValueError, TypeError):
+                        pass
+                
+                if 'out_time_ms' in progress_data:
+                    try:
+                        output_time_ms = int(progress_data['out_time_ms'])
+                        output_duration = output_time_ms / 1000000.0  # Convert to seconds
+                    except (ValueError, TypeError):
+                        pass
+                
+                # Calculate progress percentage
+                # Prefer frame-based if we have output_total_frames, otherwise use time-based
+                if output_total_frames and output_total_frames > 0:
+                    percent = min(100.0, (current_frame / output_total_frames) * 100)
+                elif output_duration and input_duration and input_duration > 0:
+                    # Fallback to time-based progress
+                    percent = min(100.0, (output_duration / input_duration) * 100)
+                else:
+                    percent = 0.0
+                
+                # Calculate remaining time
+                if encoding_fps > 0 and output_total_frames and output_total_frames > 0:
+                    remaining_frames = max(0, output_total_frames - current_frame)
+                    remaining_time = remaining_frames / encoding_fps
+                elif output_duration is not None and input_duration and input_duration > 0:
+                    # Fallback to time-based estimation
+                    remaining_time = max(0, input_duration - output_duration)
+                else:
+                    remaining_time = 0
+                
+                remaining_time = int(remaining_time)
+                hours, minutes = divmod(remaining_time, 3600)
+                minutes, seconds = divmod(minutes, 60)
+                
+                # Update progress labels if available (thread-safe)
+                if progress_labels and root:
+                    def update_progress(
+                        f=current_frame, 
+                        tf=output_total_frames or total_frames or 0, 
+                        p=percent, 
+                        cf=encoding_fps, 
+                        tr=(now - tot_time)/60, 
+                        rem=f"{hours:02}:{minutes:02}:{seconds:02}"
+                    ):
+                        try:
+                            if "Frames Processed:" in progress_labels:
+                                progress_labels["Frames Processed:"].config(text=f"{f}/{tf}")
+                            if "Progress:" in progress_labels:
+                                progress_labels["Progress:"].config(text=f"{p:.2f}%")
+                            if "Average Frame Rate:" in progress_labels:
+                                progress_labels["Average Frame Rate:"].config(text=f"{cf:.1f} fps")
+                            if "Time Running:" in progress_labels:
+                                progress_labels["Time Running:"].config(text=f"{tr:.2f} min")
+                            if "Time Remaining:" in progress_labels:
+                                progress_labels["Time Remaining:"].config(text=rem)
+                        except:
+                            pass  # Widget may have been destroyed
+                    root.after(0, update_progress)
+                
+                # Reset progress_data for next update block
+                if progress_data.get('progress') == 'end':
+                    break
+                # Clear progress_data after processing - next block will have all data
+                progress_data = {}
 
         return_code = process.wait()
         return return_code, error_list
@@ -207,6 +261,14 @@ class VideoProcessor:
         """
         self._cancel_requested = False
         
+        # Get input duration for accurate progress tracking when FPS changes
+        from .VideoInfo import VideoInfo
+        video_info = VideoInfo(input_file)
+        input_duration = video_info.get_duration()
+        input_fps = video_info.fps
+        if input_fps:
+            self._input_fps = input_fps
+        
         # Build FFmpeg command
         ffmpeg_cmd = FFmpegCommandBuilder.build_scale_command_cpu(
             input_file, output_file, xaxis, yaxis, crf, preset, threads, fps=fps
@@ -230,7 +292,8 @@ class VideoProcessor:
 
             # Process FFmpeg output and track progress
             return_code, error_list = self._process_ffmpeg_output(
-                process, progress_labels, status_text, total_frames, error_list, input_file, root
+                process, progress_labels, status_text, total_frames, error_list, input_file, root,
+                target_fps=fps, input_duration=input_duration
             )
             
             # Clear process reference
@@ -302,6 +365,14 @@ class VideoProcessor:
         """
         self._cancel_requested = False
         
+        # Get input duration for accurate progress tracking when FPS changes
+        from .VideoInfo import VideoInfo
+        video_info = VideoInfo(input_file)
+        input_duration = video_info.get_duration()
+        input_fps = video_info.fps
+        if input_fps:
+            self._input_fps = input_fps
+        
         # Build FFmpeg command
         ffmpeg_cmd = FFmpegCommandBuilder.build_scale_command_gpu(
             input_file, output_file, xaxis, yaxis, crf, preset, fps=fps
@@ -324,7 +395,8 @@ class VideoProcessor:
 
             # Process FFmpeg output and track progress
             return_code, error_list = self._process_ffmpeg_output(
-                process, progress_labels, status_text, total_frames, error_list, input_file, root
+                process, progress_labels, status_text, total_frames, error_list, input_file, root,
+                target_fps=fps, input_duration=input_duration
             )
             
             # Clear process reference
