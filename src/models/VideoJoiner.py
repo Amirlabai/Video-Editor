@@ -9,6 +9,7 @@ import re
 import logging
 from typing import List, Optional
 from pathlib import Path
+from tkinter import messagebox
 
 from .VideoInfo import VideoInfo
 from .FFmpegCommandBuilder import FFmpegCommandBuilder
@@ -131,7 +132,7 @@ class VideoJoiner:
                             pass
                     # Close window after showing cancellation message
                     root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
-                        __import__('tkinter.messagebox').showinfo("Cancelled", "Operation was cancelled."),
+                        messagebox.showinfo("Cancelled", "Operation was cancelled."),
                         root.destroy()
                     ))
                     return
@@ -164,13 +165,13 @@ class VideoJoiner:
 
             output_text.see("end")
             root.after(1000, lambda: (
-                __import__('tkinter.messagebox').showinfo("Done", "All videos have been joined!"),
+                messagebox.showinfo("Done", "All videos have been joined!"),
                 root.destroy()
             ))
 
         except FileNotFoundError:
             self._current_process = None
-            __import__('tkinter.messagebox').showerror(
+            messagebox.showerror(
                 "Error", "FFmpeg not found! Make sure it's installed and added to PATH."
             )
         except Exception as e:

@@ -371,12 +371,16 @@ class VideoInfo:
         if not video_files:
             return False
         
-        reference_info = VideoInfo.get_video_info(video_files[0])
+        # Create VideoInfo instance for reference video
+        reference_video_info = VideoInfo(video_files[0])
+        reference_info = reference_video_info.get_video_info()
         if not reference_info:
             return False
 
+        # Check all other videos against reference
         for video in video_files[1:]:
-            info = VideoInfo.get_video_info(video)
+            video_info = VideoInfo(video)
+            info = video_info.get_video_info()
             if info != reference_info:
                 return False
 
