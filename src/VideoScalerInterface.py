@@ -1,4 +1,5 @@
 from models.ui.Windows import VideoScalerWindow, BatchWindow, JoinWindow
+from models.ui.UnifiedProcessingWindow import UnifiedProcessingWindow
 from models.ConfigManager import get_config_manager
 from tkinter import messagebox
 
@@ -43,11 +44,11 @@ def window():
         root.quit()
 
     def scale_video():
-        window = VideoScalerWindow(windowBg, buttonBg, activeButtonBg)
+        window = UnifiedProcessingWindow(windowBg, buttonBg, activeButtonBg)
         window.run()
 
     def batch_scale():
-        window = BatchWindow(windowBg, buttonBg, activeButtonBg)
+        window = UnifiedProcessingWindow(windowBg, buttonBg, activeButtonBg)
         window.run()
 
     def join_videos():
@@ -160,6 +161,11 @@ You can manually edit the JSON config file for advanced customization.""")
     root.minsize(width=300, height=200)
     root.geometry("600x200+50+50")
     root.title("ffmpegMagic")
+    try:
+        icon_path = resource_path("assets/ffmpegMagic.ico")
+        root.iconbitmap(icon_path)
+    except Exception as e:
+        print(f"Error setting icon: {e}")
 
     # CustomTkinter window elements
     categories_label = ctk.CTkLabel(root, text="Video Editor", font=ctk.CTkFont(size=16, weight="bold"))

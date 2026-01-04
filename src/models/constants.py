@@ -12,14 +12,20 @@ UHD_4K_WIDTH = 3840
 UHD_4K_HEIGHT = 2160
 
 # Resolution tuples for easy access
-HD_RESOLUTION = (HD_WIDTH, HD_HEIGHT)
-FHD_RESOLUTION = (FHD_WIDTH, FHD_HEIGHT)
-UHD_4K_RESOLUTION = (UHD_4K_WIDTH, UHD_4K_HEIGHT)
-
+HORIZONTAL_RESOLUTION = {
+"HD_RESOLUTION": (HD_WIDTH, HD_HEIGHT),
+"FHD_RESOLUTION": (FHD_WIDTH, FHD_HEIGHT),
+"UHD_4K_RESOLUTION": (UHD_4K_WIDTH, UHD_4K_HEIGHT)
+}
+VERTICAL_RESOLUTION = {
+"HD_RESOLUTION": (HD_HEIGHT, HD_WIDTH),
+"FHD_RESOLUTION": (FHD_HEIGHT, FHD_WIDTH),
+"UHD_4K_RESOLUTION": (UHD_4K_HEIGHT,UHD_4K_WIDTH)
+}
 # Encoding Quality (CRF/CQ values)
 # Lower = better quality, larger file size
 # Higher = lower quality, smaller file size
-DEFAULT_CRF = "26"
+DEFAULT_CRF = "30"
 HIGH_QUALITY_CRF = "23"
 MEDIUM_QUALITY_CRF = "26"
 LOW_QUALITY_CRF = "28"
@@ -29,12 +35,12 @@ CRF_MAX = 30
 # Encoding Presets
 # Slower = better compression, takes longer
 # Faster = less compression, faster encoding
-DEFAULT_PRESET = "medium"
+DEFAULT_PRESET = "ultrafast"
 PRESET_OPTIONS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]
 
 # Audio Settings
 DEFAULT_AUDIO_CODEC = "aac"
-DEFAULT_AUDIO_BITRATE = "128k"
+DEFAULT_AUDIO_BITRATE = "64k"
 AUDIO_CODEC_OPTIONS = ["aac", "mp3", "opus", "vorbis", "copy"]  # copy = no re-encoding
 AUDIO_BITRATE_OPTIONS = ["64k", "96k", "128k", "192k", "256k", "320k"]
 
