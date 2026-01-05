@@ -26,9 +26,6 @@ VERTICAL_RESOLUTION = {
 # Lower = better quality, larger file size
 # Higher = lower quality, smaller file size
 DEFAULT_CRF = "30"
-HIGH_QUALITY_CRF = "23"
-MEDIUM_QUALITY_CRF = "26"
-LOW_QUALITY_CRF = "28"
 CRF_MIN = 17
 CRF_MAX = 30
 

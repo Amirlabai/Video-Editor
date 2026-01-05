@@ -26,6 +26,10 @@ from ..constants import (
 class UnifiedProcessingWindow:
     """Unified window for single and batch video processing with all options."""
     
+    # Class constants for combo box options
+    FPS_OPTIONS = ["12", "24", "25", "29.97", "30", "50", "60", "120"]
+    RESOLUTION_OPTIONS = ["HD (1280x720)", "FHD (1920x1080)", "4K (3840x2160)"]
+    
     def __init__(
         self,
         window_bg: str = DEFAULT_WINDOW_BG,
@@ -53,25 +57,58 @@ class UnifiedProcessingWindow:
         default_crf, default_preset, default_resolution = self.config.get_encoding_settings()
         self.cpu_cores = multiprocessing.cpu_count()
         
-        # Initialize settings
-        self.use_gpu = tk.BooleanVar(value=default_use_gpu)
-        self.use_all_cores = tk.BooleanVar(value=default_use_all_cores)
+        # Map default_resolution from config format to combo box format
+        resolution_map = {
+            "HD": "HD (1280x720)",
+            "FHD": "FHD (1920x1080)",
+            "4K": "4K (3840x2160)"
+        }
+        default_resolution_combo = resolution_map.get(default_resolution, "HD (1280x720)")
+        
+        # Set default width/height based on resolution
+        if default_resolution == "HD":
+            default_width, default_height = HD_WIDTH, HD_HEIGHT
+        elif default_resolution == "FHD":
+            default_width, default_height = FHD_WIDTH, FHD_HEIGHT
+        elif default_resolution == "4K":
+            default_width, default_height = UHD_4K_WIDTH, UHD_4K_HEIGHT
+        else:
+            default_width, default_height = HD_WIDTH, HD_HEIGHT
+        
+        # Store default values for reset functionality (lowest settings)
+        self.default_fps = self.FPS_OPTIONS[0]
+        self.default_resolution = self.RESOLUTION_OPTIONS[0]  # HD (1280x720) - lowest
+        self.default_width = HD_WIDTH
+        self.default_height = HD_HEIGHT
+        self.default_crf = str(CRF_MAX)  # Highest CRF = lowest quality
+        self.default_preset = "ultrafast"  # Fastest preset
+        self.default_use_gpu = False
+        self.default_use_all_cores = False
+        
+        # Initialize settings (use reset defaults for initial display)
+        self.use_gpu = tk.BooleanVar(value=self.default_use_gpu)
+        self.use_all_cores = tk.BooleanVar(value=self.default_use_all_cores)
         self.cap_cpu_50 = tk.BooleanVar(value=False)
-        self.target_fps = tk.StringVar(value="")
-        self.target_width = tk.StringVar(value=str(FHD_WIDTH))
-        self.target_height = tk.StringVar(value=str(FHD_HEIGHT))
-        self.crf = tk.StringVar(value=default_crf)
-        self.preset = tk.StringVar(value=default_preset)
-        self.output_folder = tk.StringVar(value="")
+        self.target_fps = tk.StringVar(value=self.default_fps)
+        self.resolution = tk.StringVar(value=self.default_resolution)
+        self.target_width = tk.StringVar(value=str(self.default_width))
+        self.target_height = tk.StringVar(value=str(self.default_height))
+        self.crf = tk.StringVar(value=self.default_crf)
+        self.preset = tk.StringVar(value=self.default_preset)
+        # Load last output folder from config
+        last_output_folder = self.config.get_last_output_folder()
+        self.output_folder = tk.StringVar(value=last_output_folder if last_output_folder else "")
         
         # Create window
         self.window = tk.Tk()
         self.window.configure(bg=window_bg)
         self.window.title("Video Processor")
-        self.window.geometry("1200x800")
+        self.window.state('zoomed')
         
         self._create_ui()
         self._check_gpu_availability()
+        # Initialize resolution values based on default selection
+        self._update_resolution_from_combo()
     
     def _check_gpu_availability(self):
         """Check if GPU is available."""
@@ -93,91 +130,25 @@ class UnifiedProcessingWindow:
         main_paned = tk.PanedWindow(self.window, orient=tk.HORIZONTAL, bg=self.window_bg)
         main_paned.pack(fill="both", expand=True, padx=10, pady=10)
         
-        # Left panel - Settings
+        # Left panel - Settings (fill vertically)
         left_frame = tk.Frame(main_paned, bg=self.window_bg)
         main_paned.add(left_frame, width=400, minsize=350)
         
-        # Right panel - Video table
+        # Right panel - Video table, progress, buttons, status
         right_frame = tk.Frame(main_paned, bg=self.window_bg)
         main_paned.add(right_frame, width=800, minsize=600)
         
         self._create_settings_panel(left_frame)
-        self._create_video_table(right_frame)
-        
-        # Bottom buttons
-        button_frame = tk.Frame(self.window, bg=self.window_bg)
-        button_frame.pack(fill="x", padx=10, pady=5)
-        
-        self.add_files_btn = tk.Button(
-            button_frame, text="Add Files", command=self._add_files,
-            bg=self.button_bg, fg="white", font=("Arial", "10", "bold"),
-            activebackground=self.active_button_bg, activeforeground="white", borderwidth=2
-        )
-        self.add_files_btn.pack(side="left", padx=5)
-        
-        self.add_folder_btn = tk.Button(
-            button_frame, text="Add Folder", command=self._add_folder,
-            bg=self.button_bg, fg="white", font=("Arial", "10", "bold"),
-            activebackground=self.active_button_bg, activeforeground="white", borderwidth=2
-        )
-        self.add_folder_btn.pack(side="left", padx=5)
-        
-        self.remove_btn = tk.Button(
-            button_frame, text="Remove Selected", command=self._remove_selected,
-            bg=self.button_bg, fg="white", font=("Arial", "10", "bold"),
-            activebackground=self.active_button_bg, activeforeground="white", borderwidth=2
-        )
-        self.remove_btn.pack(side="left", padx=5)
-        
-        # Progress section
-        self.progress_frame = tk.LabelFrame(self.window, text="Progress", 
-                                           bg=self.window_bg, fg="white", font=("Arial", "12", "bold"))
-        self.progress_frame.pack(fill="x", padx=10, pady=5)
-        self.progress_labels = {}
-        self._create_progress_labels()
-        
-        # Status text
-        self.status_text = tk.Text(self.window, height=4, width=100, bg=self.button_bg, fg="white")
-        self.status_text.pack(fill="both", expand=True, padx=10, pady=5)
-        
-        # Action buttons
-        action_frame = tk.Frame(self.window, bg=self.window_bg)
-        action_frame.pack(fill="x", padx=10, pady=5)
-        
-        self.run_btn = tk.Button(
-            action_frame, text="▶ Run", command=self._run_processing,
-            bg="#4CAF50", fg="white", font=("Arial", "12", "bold"),
-            activebackground="#45a049", activeforeground="white", borderwidth=2
-        )
-        self.run_btn.pack(side="left", padx=5)
-        
-        self.cancel_btn = tk.Button(
-            action_frame, text="❌ Cancel", command=self._cancel_processing,
-            bg=CANCEL_BUTTON_BG, fg="white", font=("Arial", "12", "bold"),
-            activebackground=CANCEL_BUTTON_ACTIVE_BG, activeforeground="white", borderwidth=2
-        )
-        self.cancel_btn.pack(side="left", padx=5)
+        self._create_right_panel(right_frame)
     
     def _create_settings_panel(self, parent):
         """Create the settings panel on the left."""
-        # Scrollable frame for settings
-        canvas = tk.Canvas(parent, bg=self.window_bg, highlightthickness=0)
-        scrollbar = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg=self.window_bg)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        # Settings frame
+        settings_frame = tk.Frame(parent, bg=self.window_bg)
+        settings_frame.pack(fill="both", expand=True)
         
         # Performance Settings
-        perf_frame = tk.LabelFrame(scrollable_frame, text="Performance Settings", 
+        perf_frame = tk.LabelFrame(settings_frame, text="Performance Settings", 
                                    bg=self.window_bg, fg="white", font=("Arial", "11", "bold"))
         perf_frame.pack(fill="x", padx=5, pady=5)
         
@@ -207,17 +178,25 @@ class UnifiedProcessingWindow:
         cpu_cap_checkbox.pack(anchor="w", padx=10, pady=5)
         
         # Video Settings
-        video_frame = tk.LabelFrame(scrollable_frame, text="Video Settings", 
+        video_frame = tk.LabelFrame(settings_frame, text="Video Settings", 
                                     bg=self.window_bg, fg="white", font=("Arial", "11", "bold"))
         video_frame.pack(fill="x", padx=5, pady=5)
         
         # FPS
         fps_frame = tk.Frame(video_frame, bg=self.window_bg)
         fps_frame.pack(fill="x", padx=10, pady=5)
-        tk.Label(fps_frame, text="Target FPS (leave empty to keep current):", 
+        tk.Label(fps_frame, text="Target FPS:", 
                 bg=self.window_bg, fg="white", font=("Arial", "9")).pack(anchor="w")
-        fps_entry = tk.Entry(fps_frame, textvariable=self.target_fps, bg=self.button_bg, fg="white")
-        fps_entry.pack(fill="x", pady=2)
+        self.fps_combo = ttk.Combobox(fps_frame, textvariable=self.target_fps, 
+                                values=self.FPS_OPTIONS, 
+                                state="readonly")
+        self.fps_combo.pack(fill="x", pady=2)
+        # Set initial value by finding index
+        try:
+            initial_index = self.FPS_OPTIONS.index(self.target_fps.get())
+            self.fps_combo.current(initial_index)
+        except ValueError:
+            self.fps_combo.current(0)  # Default to first value (12)
         
         # Resolution
         res_frame = tk.Frame(video_frame, bg=self.window_bg)
@@ -225,41 +204,20 @@ class UnifiedProcessingWindow:
         tk.Label(res_frame, text="Resolution:", bg=self.window_bg, fg="white", 
                 font=("Arial", "9")).pack(anchor="w")
         
-        res_buttons_frame = tk.Frame(res_frame, bg=self.window_bg)
-        res_buttons_frame.pack(fill="x", pady=2)
-        
-        def set_resolution(width, height):
-            self.target_width.set(str(width))
-            self.target_height.set(str(height))
-        
-        tk.Button(res_buttons_frame, text="HD (1280x720)", 
-                 command=lambda: set_resolution(HD_WIDTH, HD_HEIGHT),
-                 bg=self.button_bg, fg="white", font=("Arial", "8"),
-                 activebackground=self.active_button_bg).pack(side="left", padx=2)
-        tk.Button(res_buttons_frame, text="FHD (1920x1080)", 
-                 command=lambda: set_resolution(FHD_WIDTH, FHD_HEIGHT),
-                 bg=self.button_bg, fg="white", font=("Arial", "8"),
-                 activebackground=self.active_button_bg).pack(side="left", padx=2)
-        tk.Button(res_buttons_frame, text="4K (3840x2160)", 
-                 command=lambda: set_resolution(UHD_4K_WIDTH, UHD_4K_HEIGHT),
-                 bg=self.button_bg, fg="white", font=("Arial", "8"),
-                 activebackground=self.active_button_bg).pack(side="left", padx=2)
-        
-        # Custom resolution
-        custom_res_frame = tk.Frame(video_frame, bg=self.window_bg)
-        custom_res_frame.pack(fill="x", padx=10, pady=5)
-        tk.Label(custom_res_frame, text="Custom Resolution:", 
-                bg=self.window_bg, fg="white", font=("Arial", "9")).pack(anchor="w")
-        res_input_frame = tk.Frame(custom_res_frame, bg=self.window_bg)
-        res_input_frame.pack(fill="x", pady=2)
-        tk.Entry(res_input_frame, textvariable=self.target_width, width=8, 
-                bg=self.button_bg, fg="white").pack(side="left", padx=2)
-        tk.Label(res_input_frame, text="x", bg=self.window_bg, fg="white").pack(side="left")
-        tk.Entry(res_input_frame, textvariable=self.target_height, width=8, 
-                bg=self.button_bg, fg="white").pack(side="left", padx=2)
+        self.resolution_combo = ttk.Combobox(res_frame, textvariable=self.resolution,
+                                       values=self.RESOLUTION_OPTIONS,
+                                       state="readonly")
+        self.resolution_combo.pack(fill="x", pady=2)
+        self.resolution_combo.bind("<<ComboboxSelected>>", self._on_resolution_change)
+        # Set initial value by finding index
+        try:
+            initial_index = self.RESOLUTION_OPTIONS.index(self.resolution.get())
+            self.resolution_combo.current(initial_index)
+        except ValueError:
+            self.resolution_combo.current(1)  # Default to FHD
         
         # Encoding Settings
-        encoding_frame = tk.LabelFrame(scrollable_frame, text="Encoding Settings", 
+        encoding_frame = tk.LabelFrame(settings_frame, text="Encoding Settings", 
                                       bg=self.window_bg, fg="white", font=("Arial", "11", "bold"))
         encoding_frame.pack(fill="x", padx=5, pady=5)
         
@@ -268,20 +226,34 @@ class UnifiedProcessingWindow:
         crf_frame.pack(fill="x", padx=10, pady=5)
         tk.Label(crf_frame, text=f"CRF ({CRF_MIN}-{CRF_MAX}, lower=better quality):", 
                 bg=self.window_bg, fg="white", font=("Arial", "9")).pack(anchor="w")
-        crf_entry = tk.Entry(crf_frame, textvariable=self.crf, bg=self.button_bg, fg="white")
-        crf_entry.pack(fill="x", pady=2)
+        crf_values = [str(i) for i in range(CRF_MIN, CRF_MAX + 1)]
+        self.crf_combo = ttk.Combobox(crf_frame, textvariable=self.crf, 
+                                values=crf_values, state="readonly")
+        self.crf_combo.pack(fill="x", pady=2)
+        # Set initial value by finding index
+        try:
+            initial_index = crf_values.index(self.crf.get())
+            self.crf_combo.current(initial_index)
+        except ValueError:
+            self.crf_combo.current(len(crf_values) - 1)  # Default to last value (30)
         
         # Preset
         preset_frame = tk.Frame(encoding_frame, bg=self.window_bg)
         preset_frame.pack(fill="x", padx=10, pady=5)
         tk.Label(preset_frame, text="Preset:", bg=self.window_bg, fg="white", 
                 font=("Arial", "9")).pack(anchor="w")
-        preset_combo = ttk.Combobox(preset_frame, textvariable=self.preset, 
+        self.preset_combo = ttk.Combobox(preset_frame, textvariable=self.preset, 
                                     values=PRESET_OPTIONS, state="readonly")
-        preset_combo.pack(fill="x", pady=2)
+        self.preset_combo.pack(fill="x", pady=2)
+        # Set initial value by finding index
+        try:
+            initial_index = PRESET_OPTIONS.index(self.preset.get())
+            self.preset_combo.current(initial_index)
+        except ValueError:
+            self.preset_combo.current(0)  # Default to first value
         
         # Output Settings
-        output_frame = tk.LabelFrame(scrollable_frame, text="Output Settings", 
+        output_frame = tk.LabelFrame(settings_frame, text="Output Settings", 
                                     bg=self.window_bg, fg="white", font=("Arial", "11", "bold"))
         output_frame.pack(fill="x", padx=5, pady=5)
         
@@ -289,12 +261,219 @@ class UnifiedProcessingWindow:
         output_path_frame.pack(fill="x", padx=10, pady=5)
         tk.Label(output_path_frame, text="Output Folder (leave empty to use input folder):", 
                 bg=self.window_bg, fg="white", font=("Arial", "9")).pack(anchor="w")
-        output_entry = tk.Entry(output_path_frame, textvariable=self.output_folder, 
-                               bg=self.button_bg, fg="white")
-        output_entry.pack(fill="x", pady=2, side="left", expand=True)
-        tk.Button(output_path_frame, text="Browse", command=self._browse_output_folder,
+        output_path_container = tk.Frame(output_path_frame, bg=self.window_bg)
+        output_path_container.pack(fill="x", pady=2)
+        # Create label for displaying output folder (read-only)
+        folder_value = self.output_folder.get()
+        display_text = folder_value if folder_value else "(empty - will use input folder)"
+        self.output_folder_label = tk.Label(output_path_container, 
+                                           text=display_text,
+                                           bg=self.button_bg, fg="white", 
+                                           font=("Arial", "9"),
+                                           anchor="w", relief="sunken", padx=5, pady=2)
+        self.output_folder_label.pack(fill="x", side="left", expand=True)
+        tk.Button(output_path_container, text="Browse", command=self._browse_output_folder,
                  bg=self.button_bg, fg="white", font=("Arial", "8"),
                  activebackground=self.active_button_bg).pack(side="left", padx=2)
+        
+        # Reset to Defaults Button
+        reset_frame = tk.Frame(settings_frame, bg=self.window_bg)
+        reset_frame.pack(fill="x", padx=5, pady=10)
+        tk.Button(reset_frame, text="Reset to Default Settings", command=self._reset_to_defaults,
+                 bg=self.button_bg, fg="white", font=("Arial", "10", "bold"),
+                 activebackground=self.active_button_bg, activeforeground="white", borderwidth=2).pack(fill="x", padx=5)
+    
+    def _create_right_panel(self, parent):
+        """Create the right panel with video table, progress, buttons, and status."""
+        # Video table
+        self._create_video_table(parent)
+        
+        # Bottom buttons
+        button_frame = tk.Frame(parent, bg=self.window_bg)
+        button_frame.pack(fill="x", padx=5, pady=5)
+        
+        self.add_files_btn = tk.Button(
+            button_frame, text="Add Files", command=self._add_files,
+            bg=self.button_bg, fg="white", font=("Arial", "10", "bold"),
+            activebackground=self.active_button_bg, activeforeground="white", borderwidth=2
+        )
+        self.add_files_btn.pack(side="left", padx=5)
+        
+        self.add_folder_btn = tk.Button(
+            button_frame, text="Add Folder", command=self._add_folder,
+            bg=self.button_bg, fg="white", font=("Arial", "10", "bold"),
+            activebackground=self.active_button_bg, activeforeground="white", borderwidth=2
+        )
+        self.add_folder_btn.pack(side="left", padx=5)
+        
+        self.remove_btn = tk.Button(
+            button_frame, text="Remove Selected", command=self._remove_selected,
+            bg=self.button_bg, fg="white", font=("Arial", "10", "bold"),
+            activebackground=self.active_button_bg, activeforeground="white", borderwidth=2
+        )
+        self.remove_btn.pack(side="left", padx=5)
+        
+        # Progress section
+        self.progress_frame = tk.LabelFrame(parent, text="Progress", 
+                                           bg=self.window_bg, fg="white", font=("Arial", "12", "bold"))
+        self.progress_frame.pack(fill="x", padx=5, pady=5)
+        self.progress_labels = {}
+        self._create_progress_labels()
+        
+        # Status text
+        self.status_text = tk.Text(parent, height=4, width=100, bg=self.button_bg, fg="white")
+        self.status_text.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        # Action buttons
+        action_frame = tk.Frame(parent, bg=self.window_bg)
+        action_frame.pack(fill="x", padx=5, pady=5)
+        
+        self.run_btn = tk.Button(
+            action_frame, text="▶ Run", command=self._run_processing,
+            bg="#4CAF50", fg="white", font=("Arial", "12", "bold"),
+            activebackground="#45a049", activeforeground="white", borderwidth=2
+        )
+        self.run_btn.pack(side="left", padx=5)
+        
+        self.cancel_btn = tk.Button(
+            action_frame, text="❌ Cancel", command=self._cancel_processing,
+            bg=CANCEL_BUTTON_BG, fg="white", font=("Arial", "12", "bold"),
+            activebackground=CANCEL_BUTTON_ACTIVE_BG, activeforeground="white", borderwidth=2
+        )
+        self.cancel_btn.pack(side="left", padx=5)
+        
+        self.exit_btn = tk.Button(
+            action_frame, text="Exit", command=self._exit_window,
+            bg=self.button_bg, fg="white", font=("Arial", "12", "bold"),
+            activebackground=self.active_button_bg, activeforeground="white", borderwidth=2
+        )
+        self.exit_btn.pack(side="right", padx=5)
+    
+    def _on_resolution_change(self, event=None):
+        """Handle resolution combo box change."""
+        selected = self.resolution.get()
+        if selected == self.RESOLUTION_OPTIONS[0]:  # HD (1280x720)
+            self.target_width.set(str(HD_WIDTH))
+            self.target_height.set(str(HD_HEIGHT))
+        elif selected == self.RESOLUTION_OPTIONS[1]:  # FHD (1920x1080)
+            self.target_width.set(str(FHD_WIDTH))
+            self.target_height.set(str(FHD_HEIGHT))
+        elif selected == self.RESOLUTION_OPTIONS[2]:  # 4K (3840x2160)
+            self.target_width.set(str(UHD_4K_WIDTH))
+            self.target_height.set(str(UHD_4K_HEIGHT))
+    
+    def _update_resolution_from_combo(self):
+        """Update resolution values from combo box selection."""
+        self._on_resolution_change()
+    
+    def _map_resolution_to_combo(self, width: int, height: int) -> str:
+        """Map resolution dimensions to combo box format."""
+        if width == HD_WIDTH and height == HD_HEIGHT:
+            return self.RESOLUTION_OPTIONS[0]  # HD (1280x720)
+        elif width == FHD_WIDTH and height == FHD_HEIGHT:
+            return self.RESOLUTION_OPTIONS[1]  # FHD (1920x1080)
+        elif width == UHD_4K_WIDTH and height == UHD_4K_HEIGHT:
+            return self.RESOLUTION_OPTIONS[2]  # 4K (3840x2160)
+        else:
+            # Return closest match or default
+            return self.RESOLUTION_OPTIONS[0]  # HD (1280x720)
+    
+    def _find_closest_fps(self, fps: float) -> str:
+        """Find closest FPS value in combo box options."""
+        fps_options = [float(f) for f in self.FPS_OPTIONS]
+        closest = min(fps_options, key=lambda x: abs(x - fps))
+        if closest == 29.97:
+            return "29.97"
+        return str(int(closest))
+    
+    def _reset_to_defaults(self):
+        """Reset all settings to default values."""
+        # Use stored default values
+        self.target_fps.set(self.default_fps)
+        self.resolution.set(self.default_resolution)
+        self.target_width.set(str(self.default_width))
+        self.target_height.set(str(self.default_height))
+        self.crf.set(self.default_crf)
+        self.preset.set(self.default_preset)
+        self.use_gpu.set(self.default_use_gpu)
+        self.use_all_cores.set(self.default_use_all_cores)
+        self.cap_cpu_50.set(False)
+        
+        # Update combo box current indices using the values
+        try:
+            self.fps_combo.current(self.FPS_OPTIONS.index(self.target_fps.get()))
+        except ValueError:
+            self.fps_combo.current(0)
+        
+        try:
+            self.resolution_combo.current(self.RESOLUTION_OPTIONS.index(self.resolution.get()))
+        except ValueError:
+            self.resolution_combo.current(0)
+        
+        crf_values = [str(i) for i in range(CRF_MIN, CRF_MAX + 1)]
+        try:
+            self.crf_combo.current(crf_values.index(self.crf.get()))
+        except ValueError:
+            self.crf_combo.current(len(crf_values) - 1)
+        
+        try:
+            self.preset_combo.current(PRESET_OPTIONS.index(self.preset.get()))
+        except ValueError:
+            self.preset_combo.current(0)
+        
+        self._on_resolution_change()
+    
+    def _update_fps_from_video(self, video_info: VideoInfo):
+        """Update FPS combo box based on video info."""
+        # Update FPS if available
+        if video_info.fps is not None and hasattr(self, 'fps_combo') and self.fps_combo:
+            closest_fps = self._find_closest_fps(video_info.fps)
+            # Verify closest_fps is in the options
+            if closest_fps in self.FPS_OPTIONS:
+                try:
+                    fps_index = self.FPS_OPTIONS.index(closest_fps)
+                    # Set StringVar first
+                    self.target_fps.set(closest_fps)
+                    # Update combobox: change state, set current, set back to readonly
+                    self.fps_combo.config(state="normal")
+                    self.fps_combo.current(fps_index)
+                    # Verify the value was set
+                    current_value = self.fps_combo.get()
+                    if current_value != closest_fps:
+                        # If not set correctly, try setting it directly
+                        self.fps_combo.set(closest_fps)
+                    self.fps_combo.config(state="readonly")
+                    # Double-check StringVar matches
+                    if self.target_fps.get() != closest_fps:
+                        self.target_fps.set(closest_fps)
+                except Exception as e:
+                    # Fallback: just set StringVar
+                    self.target_fps.set(closest_fps)
+    
+    def _update_settings_from_video(self, video_info: VideoInfo):
+        """Update FPS and resolution combo boxes based on video info."""
+        # Update FPS if available
+        self._update_fps_from_video(video_info)
+        
+        # Update resolution if available
+        if video_info.width is not None and video_info.height is not None and hasattr(self, 'resolution_combo'):
+            resolution_str = self._map_resolution_to_combo(video_info.width, video_info.height)
+            try:
+                res_index = self.RESOLUTION_OPTIONS.index(resolution_str)
+                # Temporarily change state to update value, then set back to readonly
+                self.resolution_combo.config(state="normal")
+                self.resolution.set(resolution_str)
+                self.resolution_combo.current(res_index)
+                self.resolution_combo.config(state="readonly")
+            except (ValueError, AttributeError):
+                # Fallback: just set the StringVar
+                try:
+                    self.resolution_combo.config(state="normal")
+                    self.resolution.set(resolution_str)
+                    self.resolution_combo.config(state="readonly")
+                except:
+                    pass
+            self._on_resolution_change()
     
     def _create_video_table(self, parent):
         """Create the video table on the right."""
@@ -388,6 +567,7 @@ class UnifiedProcessingWindow:
         """Add a single video to the list."""
         try:
             video_info = VideoInfo(file_path)
+            is_first_video = len(self.videos) == 0
             self.videos.append(video_info)
             
             # Get file size
@@ -405,6 +585,14 @@ class UnifiedProcessingWindow:
                 size_str,
                 "Pending"
             ))
+            
+            # Update FPS from newly added video (always update FPS to match the file)
+            self._update_fps_from_video(video_info)
+            
+            # Update settings (including resolution) from first video added
+            if is_first_video:
+                # Call directly - UI should be ready by now
+                self._update_settings_from_video(video_info)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load video {file_path}:\n{str(e)}")
     
@@ -427,6 +615,8 @@ class UnifiedProcessingWindow:
         if folder:
             self.config.set_last_output_folder(folder)
             self.output_folder.set(folder)
+            # Update the display label
+            self.output_folder_label.config(text=folder)
     
     def _format_size(self, size_bytes: int) -> str:
         """Format file size."""
@@ -448,8 +638,20 @@ class UnifiedProcessingWindow:
         
         # Validate settings
         try:
-            width = int(self.target_width.get())
-            height = int(self.target_height.get())
+            # Parse resolution from combo box
+            resolution_selected = self.resolution.get()
+            if resolution_selected == self.RESOLUTION_OPTIONS[0]:  # HD (1280x720)
+                width = HD_WIDTH
+                height = HD_HEIGHT
+            elif resolution_selected == self.RESOLUTION_OPTIONS[1]:  # FHD (1920x1080)
+                width = FHD_WIDTH
+                height = FHD_HEIGHT
+            elif resolution_selected == self.RESOLUTION_OPTIONS[2]:  # 4K (3840x2160)
+                width = UHD_4K_WIDTH
+                height = UHD_4K_HEIGHT
+            else:
+                raise ValueError("Please select a valid resolution")
+            
             crf_val = int(self.crf.get())
             if not (CRF_MIN <= crf_val <= CRF_MAX):
                 raise ValueError(f"CRF must be between {CRF_MIN} and {CRF_MAX}")
@@ -457,14 +659,12 @@ class UnifiedProcessingWindow:
             messagebox.showerror("Invalid Settings", f"Please check your settings:\n{str(e)}")
             return
         
-        # Get FPS
-        target_fps = None
-        if self.target_fps.get().strip():
-            try:
-                target_fps = float(self.target_fps.get())
-            except ValueError:
-                messagebox.showerror("Invalid FPS", "FPS must be a number.")
-                return
+        # Get FPS from combo box
+        try:
+            target_fps = float(self.target_fps.get())
+        except ValueError:
+            messagebox.showerror("Invalid FPS", "FPS must be a number.")
+            return
         
         # Calculate threads
         if self.cap_cpu_50.get():
@@ -598,6 +798,15 @@ class UnifiedProcessingWindow:
         self.batch_processor.cancel()
         self.processing = False
         self.window.after(0, lambda: self.run_btn.config(state="normal"))
+    
+    def _exit_window(self):
+        """Close the window."""
+        if self.processing:
+            if not messagebox.askyesno("Processing in Progress", 
+                                       "Processing is in progress. Do you want to cancel and exit?"):
+                return
+            self._cancel_processing()
+        self.window.destroy()
     
     def run(self):
         """Run the window mainloop."""

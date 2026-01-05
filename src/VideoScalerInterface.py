@@ -47,10 +47,6 @@ def window():
         window = UnifiedProcessingWindow(windowBg, buttonBg, activeButtonBg)
         window.run()
 
-    def batch_scale():
-        window = UnifiedProcessingWindow(windowBg, buttonBg, activeButtonBg)
-        window.run()
-
     def join_videos():
         window = JoinWindow(windowBg, buttonBg, activeButtonBg)
         window.run()
@@ -174,12 +170,10 @@ You can manually edit the JSON config file for advanced customization.""")
     button_frame = ctk.CTkFrame(root, fg_color="transparent")
     button_frame.pack(pady=(10, 5))
 
-    scaleVideo = ctk.CTkButton(button_frame, text="Scale Down A video", command=scale_video)
-    batchScale = ctk.CTkButton(button_frame, text="Scale Down Videos in a folder", command=batch_scale, width=200)
+    scaleVideo = ctk.CTkButton(button_frame, text="Scale Down A Videos", command=scale_video)
     joinVideos = ctk.CTkButton(button_frame, text="Combine Videos", command=join_videos)
 
     scaleVideo.pack(side="left", padx=5)
-    batchScale.pack(side="left", padx=5)
     joinVideos.pack(side="left", padx=5)
 
     # Settings button
