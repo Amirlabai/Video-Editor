@@ -191,6 +191,7 @@ class UnifiedProcessingWindow:
                                 values=self.FPS_OPTIONS, 
                                 state="readonly")
         self.fps_combo.pack(fill="x", pady=2)
+        self.fps_combo.bind("<<ComboboxSelected>>", self._on_fps_change)
         # Set initial value by finding index
         try:
             initial_index = self.FPS_OPTIONS.index(self.target_fps.get())
@@ -230,6 +231,7 @@ class UnifiedProcessingWindow:
         self.crf_combo = ttk.Combobox(crf_frame, textvariable=self.crf, 
                                 values=crf_values, state="readonly")
         self.crf_combo.pack(fill="x", pady=2)
+        self.crf_combo.bind("<<ComboboxSelected>>", self._on_crf_change)
         # Set initial value by finding index
         try:
             initial_index = crf_values.index(self.crf.get())
@@ -245,6 +247,7 @@ class UnifiedProcessingWindow:
         self.preset_combo = ttk.Combobox(preset_frame, textvariable=self.preset, 
                                     values=PRESET_OPTIONS, state="readonly")
         self.preset_combo.pack(fill="x", pady=2)
+        self.preset_combo.bind("<<ComboboxSelected>>", self._on_preset_change)
         # Set initial value by finding index
         try:
             initial_index = PRESET_OPTIONS.index(self.preset.get())
@@ -361,6 +364,27 @@ class UnifiedProcessingWindow:
         elif selected == self.RESOLUTION_OPTIONS[2]:  # 4K (3840x2160)
             self.target_width.set(str(UHD_4K_WIDTH))
             self.target_height.set(str(UHD_4K_HEIGHT))
+    
+    def _on_crf_change(self, event=None):
+        """Handle CRF combo box change."""
+        # Ensure self.crf is synced with the combo box selection
+        selected_value = self.crf_combo.get()
+        if selected_value:
+            self.crf.set(selected_value)
+    
+    def _on_fps_change(self, event=None):
+        """Handle FPS combo box change."""
+        # Ensure self.target_fps is synced with the combo box selection
+        selected_value = self.fps_combo.get()
+        if selected_value:
+            self.target_fps.set(selected_value)
+    
+    def _on_preset_change(self, event=None):
+        """Handle Preset combo box change."""
+        # Ensure self.preset is synced with the combo box selection
+        selected_value = self.preset_combo.get()
+        if selected_value:
+            self.preset.set(selected_value)
     
     def _update_resolution_from_combo(self):
         """Update resolution values from combo box selection."""
