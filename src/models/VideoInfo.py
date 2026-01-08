@@ -32,6 +32,7 @@ class VideoInfo:
         self.codec: Optional[str] = None
         self.framerate: Optional[str] = None  # Raw framerate string from ffprobe
         self.total_frames: Optional[int] = None
+        self.status_done: Optional[str] = None
         
         # User selections - encoding settings
         self.target_fps: Optional[float] = None
@@ -63,15 +64,6 @@ class VideoInfo:
         """
         self.video_path = video_path
         
-        # Extract all video info
-        fps_info = self._extract_fps_and_size(video_path)
-        if fps_info:
-            self.fps, self.width, self.height = fps_info
-        else:
-            self.fps = None
-            self.width = None
-            self.height = None
-        
         # Extract codec and framerate
         video_info = self._extract_video_info(video_path)
         if video_info:
@@ -83,8 +75,7 @@ class VideoInfo:
                 self.is_vertical = False
                 self.orientation = "_horizontal"
             # Use width/height from video_info if fps_info didn't work
-            if not fps_info:
-                self.fps = self._parse_framerate(self.framerate) if self.framerate else None
+            self.fps = self._parse_framerate(self.framerate) if self.framerate else None
         
         # Extract total frames
         self.total_frames = self._extract_total_frames(video_path)

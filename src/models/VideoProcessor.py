@@ -240,7 +240,9 @@ class VideoProcessor:
         preset: str = DEFAULT_PRESET,
         threads: int = 0,
         fps: Optional[float] = None,
-        close_window: bool = True
+        close_window: bool = True,
+        input_duration: Optional[float] = None,
+        input_fps: Optional[float] = None
     ) -> None:
         """Scale video using CPU encoding.
         
@@ -258,14 +260,21 @@ class VideoProcessor:
             preset: Encoding preset
             threads: Number of threads (0 = auto)
             fps: Target FPS (None to keep current)
+            input_duration: Input video duration in seconds (optional, will be extracted if not provided)
+            input_fps: Input video FPS (optional, will be extracted if not provided)
         """
         self._cancel_requested = False
         
-        # Get input duration for accurate progress tracking when FPS changes
-        from .VideoInfo import VideoInfo
-        video_info = VideoInfo(input_file)
-        input_duration = video_info.get_duration()
-        input_fps = video_info.fps
+        # Get input duration and FPS for accurate progress tracking when FPS changes
+        # Only load VideoInfo if not provided (for backward compatibility)
+        if input_duration is None or input_fps is None:
+            from .VideoInfo import VideoInfo
+            video_info = VideoInfo(input_file)
+            if input_duration is None:
+                input_duration = video_info.get_duration()
+            if input_fps is None:
+                input_fps = video_info.fps
+        
         if input_fps:
             self._input_fps = input_fps
         
@@ -345,7 +354,9 @@ class VideoProcessor:
         crf: str = DEFAULT_CRF,
         preset: str = DEFAULT_PRESET,
         fps: Optional[float] = None,
-        close_window: bool = True
+        close_window: bool = True,
+        input_duration: Optional[float] = None,
+        input_fps: Optional[float] = None
     ) -> None:
         """Scale video using GPU encoding (NVENC).
         
@@ -362,14 +373,21 @@ class VideoProcessor:
             crf: Constant Rate Factor
             preset: Encoding preset
             fps: Target FPS (None to keep current)
+            input_duration: Input video duration in seconds (optional, will be extracted if not provided)
+            input_fps: Input video FPS (optional, will be extracted if not provided)
         """
         self._cancel_requested = False
         
-        # Get input duration for accurate progress tracking when FPS changes
-        from .VideoInfo import VideoInfo
-        video_info = VideoInfo(input_file)
-        input_duration = video_info.get_duration()
-        input_fps = video_info.fps
+        # Get input duration and FPS for accurate progress tracking when FPS changes
+        # Only load VideoInfo if not provided (for backward compatibility)
+        if input_duration is None or input_fps is None:
+            from .VideoInfo import VideoInfo
+            video_info = VideoInfo(input_file)
+            if input_duration is None:
+                input_duration = video_info.get_duration()
+            if input_fps is None:
+                input_fps = video_info.fps
+        
         if input_fps:
             self._input_fps = input_fps
         

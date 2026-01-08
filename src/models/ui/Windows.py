@@ -450,6 +450,7 @@ class JoinWindow:
     
     def __init__(
         self,
+        root: tk.Tk,
         window_bg: str = DEFAULT_WINDOW_BG,
         button_bg: str = DEFAULT_BUTTON_BG,
         active_button_bg: str = DEFAULT_ACTIVE_BUTTON_BG
@@ -463,7 +464,7 @@ class JoinWindow:
         self.config = get_config_manager()
         self.winbool = True
         
-        self.window = tk.Tk()
+        self.window = tk.Toplevel(root)
         self.window.configure(bg=window_bg)
         self.window.title(JOINER_WINDOW_TITLE)
         self.window.iconify()
@@ -556,4 +557,8 @@ class JoinWindow:
             self.window.mainloop()
         else:
             self.window.destroy()
+
+    def close(self):
+        """Close the window."""
+        self.window.destroy()
 

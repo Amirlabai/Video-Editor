@@ -9,14 +9,14 @@ from threading import Thread
 from datetime import datetime
 import os
 import multiprocessing
+import subprocess
 
 from ..VideoInfo import VideoInfo
 from ..VideoProcessor import VideoProcessor
-from ..BatchProcessor import BatchProcessor
 from ..ConfigManager import get_config_manager
 from ..constants import (
     DEFAULT_WINDOW_BG, DEFAULT_BUTTON_BG, DEFAULT_ACTIVE_BUTTON_BG,
-    CANCEL_BUTTON_BG, CANCEL_BUTTON_ACTIVE_BG, CANCELLATION_MESSAGE_DELAY,
+    CANCEL_BUTTON_BG, CANCEL_BUTTON_ACTIVE_BG,
     SUPPORTED_VIDEO_FORMATS, HD_WIDTH, HD_HEIGHT, FHD_WIDTH, FHD_HEIGHT,
     UHD_4K_WIDTH, UHD_4K_HEIGHT, DEFAULT_CRF, DEFAULT_PRESET, PRESET_OPTIONS,
     CRF_MIN, CRF_MAX
@@ -24,14 +24,10 @@ from ..constants import (
 
 
 class UnifiedProcessingWindow:
-    """Unified window for single and batch video processing with all options."""
-    
-    # Class constants for combo box options
-    FPS_OPTIONS = ["12", "24", "25", "29.97", "30", "50", "60", "120"]
-    RESOLUTION_OPTIONS = ["HD (1280x720)", "FHD (1920x1080)", "4K (3840x2160)"]
-    
+    """Unified window for batch video processing with all options."""
     def __init__(
         self,
+        root: tk.Tk,
         window_bg: str = DEFAULT_WINDOW_BG,
         button_bg: str = DEFAULT_BUTTON_BG,
         active_button_bg: str = DEFAULT_ACTIVE_BUTTON_BG
@@ -39,41 +35,25 @@ class UnifiedProcessingWindow:
         """Initialize UnifiedProcessingWindow.
         
         Args:
+            root: Root window
             window_bg: Window background color
             button_bg: Button background color
             active_button_bg: Active button background color
         """
+        self.FPS_OPTIONS = ["12", "24", "25", "29.97", "30", "50", "60", "120"]
+        self.RESOLUTION_OPTIONS = ["HD (1280x720)", "FHD (1920x1080)", "4K (3840x2160)"]
         self.window_bg = window_bg
         self.button_bg = button_bg
         self.active_button_bg = active_button_bg
         self.processor = VideoProcessor()
-        self.batch_processor = BatchProcessor()
         self.config = get_config_manager()
         self.videos: List[VideoInfo] = []  # List of VideoInfo instances
         self.processing = False
+        self._current_file_index: Optional[int] = None  # Currently processing file index
+        self._pending_callbacks: List[str] = []  # Track pending after() callbacks
+        self._is_destroying = False  # Flag to prevent callbacks after destruction
         
-        # Get default settings
-        default_use_gpu, default_use_all_cores = self.config.get_performance_settings()
-        default_crf, default_preset, default_resolution = self.config.get_encoding_settings()
         self.cpu_cores = multiprocessing.cpu_count()
-        
-        # Map default_resolution from config format to combo box format
-        resolution_map = {
-            "HD": "HD (1280x720)",
-            "FHD": "FHD (1920x1080)",
-            "4K": "4K (3840x2160)"
-        }
-        default_resolution_combo = resolution_map.get(default_resolution, "HD (1280x720)")
-        
-        # Set default width/height based on resolution
-        if default_resolution == "HD":
-            default_width, default_height = HD_WIDTH, HD_HEIGHT
-        elif default_resolution == "FHD":
-            default_width, default_height = FHD_WIDTH, FHD_HEIGHT
-        elif default_resolution == "4K":
-            default_width, default_height = UHD_4K_WIDTH, UHD_4K_HEIGHT
-        else:
-            default_width, default_height = HD_WIDTH, HD_HEIGHT
         
         # Store default values for reset functionality (lowest settings)
         self.default_fps = self.FPS_OPTIONS[0]
@@ -90,7 +70,7 @@ class UnifiedProcessingWindow:
         self.use_all_cores = tk.BooleanVar(value=self.default_use_all_cores)
         self.cap_cpu_50 = tk.BooleanVar(value=False)
         self.target_fps = tk.StringVar(value=self.default_fps)
-        self.resolution = tk.StringVar(value=self.default_resolution)
+        self.resolution = tk.StringVar(value='FHD (1920x1050)')
         self.target_width = tk.StringVar(value=str(self.default_width))
         self.target_height = tk.StringVar(value=str(self.default_height))
         self.crf = tk.StringVar(value=self.default_crf)
@@ -100,10 +80,12 @@ class UnifiedProcessingWindow:
         self.output_folder = tk.StringVar(value=last_output_folder if last_output_folder else "")
         
         # Create window
-        self.window = tk.Tk()
+        self.window = tk.Toplevel(root)
         self.window.configure(bg=window_bg)
         self.window.title("Video Processor")
         self.window.state('zoomed')
+        # Ensure cleanup when window is closed
+        self.window.protocol("WM_DELETE_WINDOW", self._exit_window)
         
         self._create_ui()
         self._check_gpu_availability()
@@ -113,14 +95,13 @@ class UnifiedProcessingWindow:
     def _check_gpu_availability(self):
         """Check if GPU is available."""
         try:
-            import subprocess
             cmd = ["ffmpeg", "-hide_banner", "-encoders"]
             result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
             gpu_available = "h264_nvenc" in result.stdout
             if not gpu_available:
                 self.use_gpu.set(False)
                 self.gpu_checkbox.config(state="disabled")
-        except:
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, Exception):
             self.use_gpu.set(False)
             self.gpu_checkbox.config(state="disabled")
     
@@ -215,7 +196,7 @@ class UnifiedProcessingWindow:
             initial_index = self.RESOLUTION_OPTIONS.index(self.resolution.get())
             self.resolution_combo.current(initial_index)
         except ValueError:
-            self.resolution_combo.current(1)  # Default to FHD
+            self.resolution_combo.current(0)  # Default to HD
         
         # Encoding Settings
         encoding_frame = tk.LabelFrame(settings_frame, text="Encoding Settings", 
@@ -591,6 +572,8 @@ class UnifiedProcessingWindow:
         """Add a single video to the list."""
         try:
             video_info = VideoInfo(file_path)
+            # Initialize status to Pending
+            video_info.status_done = "Pending"
             is_first_video = len(self.videos) == 0
             self.videos.append(video_info)
             
@@ -607,7 +590,7 @@ class UnifiedProcessingWindow:
                 resolution,
                 fps_str,
                 size_str,
-                "Pending"
+                video_info.status_done
             ))
             
             # Update FPS from newly added video (always update FPS to match the file)
@@ -623,10 +606,13 @@ class UnifiedProcessingWindow:
     def _remove_selected(self):
         """Remove selected videos from the list."""
         selected = self.video_tree.selection()
-        for item in selected:
-            index = self.video_tree.index(item)
+        # Get indices in reverse order to avoid index shifting issues
+        indices = sorted([self.video_tree.index(item) for item in selected], reverse=True)
+        for index in indices:
             if 0 <= index < len(self.videos):
                 self.videos.pop(index)
+        # Delete tree items
+        for item in selected:
             self.video_tree.delete(item)
     
     def _browse_output_folder(self):
@@ -703,12 +689,15 @@ class UnifiedProcessingWindow:
             video_info.cap_cpu_50 = self.cap_cpu_50.get()
             video_info.cpu_cores = self.cpu_cores
             video_info.target_fps = target_fps
-            video_info.target_width = width
-            video_info.target_height = height
+            if video_info.is_vertical:
+                video_info.target_width = height
+                video_info.target_height = width
+            else:
+                video_info.target_width = width
+                video_info.target_height = height
             video_info.crf = self.crf.get()
             video_info.preset = self.preset.get()
             video_info.is_vertical = height > width
-            video_info.orientation = "_vertical" if video_info.is_vertical else "_horizontal"
         
         # Save settings to config
         self.config.set_performance_settings(
@@ -723,105 +712,156 @@ class UnifiedProcessingWindow:
         self.processing = True
         self.run_btn.config(state="disabled")
         
-        # Determine if single file or batch
-        if len(self.videos) == 1:
-            Thread(target=self._process_single, args=(threads,)).start()
-        else:
-            Thread(target=self._process_batch, args=(threads,)).start()
+        # Process files from queue one by one
+        Thread(target=self._process_queue, args=(threads,)).start()
     
-    def _process_single(self, threads: int):
-        """Process a single video."""
-        video_info = self.videos[0]
-        input_file = video_info.video_path
+    def _process_queue(self, threads: int):
+        """Process videos from queue one by one."""
+        # Count only pending files (skip completed ones)
+        pending_files = [v for v in self.videos if v.status_done == "Pending"]
+        total_files = len(pending_files)
+        completed_files = sum(1 for v in self.videos if v.status_done == "Completed")
         
-        # Determine output path
-        output_folder = self.output_folder.get().strip() or os.path.dirname(input_file)
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder, exist_ok=True)
+        if total_files == 0:
+            self._safe_after(0, lambda: messagebox.showinfo("No Files to Process", "All files are already completed."))
+            self.processing = False
+            self._safe_after(0, lambda: self.run_btn.config(state="normal"))
+            return
         
-        now = datetime.now()
-        input_filename = os.path.splitext(os.path.basename(input_file))[0]
-        output_file = os.path.join(
-            output_folder,
-            f"{input_filename.split('_')[0]}_{video_info.orientation}_{video_info.crf}_{video_info.preset}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
-        )
+        self._safe_after(0, lambda: self.progress_labels["Total Files:"].config(text=str(total_files + completed_files)))
+        self._safe_after(0, lambda c=completed_files: self.progress_labels["Files Processed:"].config(text=f"{c}/{total_files + completed_files}"))
         
-        total_frames = video_info.get_total_frames()
-        
-        # Update progress
-        self.window.after(0, lambda: self.progress_labels["Total Files:"].config(text="1"))
-        self.window.after(0, lambda: self.progress_labels["Current File:"].config(text=os.path.basename(input_file)))
-        
-        # Process
-        if video_info.use_gpu:
-            self.processor.scale_video_gpu(
-                input_file, output_file, total_frames, self.progress_labels,
-                self.status_text, self.window, False, str(video_info.target_width),
-                str(video_info.target_height), video_info.crf, video_info.preset,
-                video_info.target_fps, close_window=False
+        # Process each file in the queue
+        for index, video_info in enumerate(self.videos):
+            if self.processor._cancel_requested:
+                break
+            
+            # Skip files that are already completed
+            if video_info.status_done == "Completed":
+                continue
+            
+            # Only process files that are Pending
+            if video_info.status_done != "Pending":
+                continue
+            
+            self._current_file_index = index
+            
+            # Update status to Processing
+            video_info.status_done = "Processing"
+            self._safe_after(0, lambda idx=index: self._update_video_status(idx, "Processing"))
+            self._safe_after(0, lambda name=os.path.basename(video_info.video_path): 
+                           self.progress_labels["Current File:"].config(text=name))
+            
+            # Determine output path
+            input_file = video_info.video_path
+            output_folder = self.output_folder.get().strip() or os.path.dirname(input_file)
+            if not os.path.exists(output_folder):
+                os.makedirs(output_folder, exist_ok=True)
+            
+            # Generate output filename
+            now = datetime.now()
+            input_filename = os.path.splitext(os.path.basename(input_file))[0]
+            output_file = os.path.join(
+                output_folder,
+                f"{input_filename.split('_')[0]}_{video_info.orientation}_{video_info.crf}_{video_info.preset}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
             )
-        else:
-            self.processor.scale_video_cpu(
-                input_file, output_file, total_frames, self.progress_labels,
-                self.status_text, self.window, False, str(video_info.target_width),
-                str(video_info.target_height), video_info.crf, video_info.preset,
-                threads, video_info.target_fps, close_window=False
-            )
+            
+            # Get total frames for progress tracking
+            total_frames = video_info.get_total_frames()
+            
+            # Process the video
+            try:
+                # Get duration and fps from VideoInfo to avoid reloading
+                input_duration = video_info.get_duration()
+                input_fps = video_info.fps
+                
+                if video_info.use_gpu:
+                    self.processor.scale_video_gpu(
+                        input_file, output_file, total_frames, self.progress_labels,
+                        self.status_text, self.window, False, str(video_info.target_width),
+                        str(video_info.target_height), video_info.crf, video_info.preset,
+                        video_info.target_fps, close_window=False,
+                        input_duration=input_duration, input_fps=input_fps
+                    )
+                else:
+                    self.processor.scale_video_cpu(
+                        input_file, output_file, total_frames, self.progress_labels,
+                        self.status_text, self.window, False, str(video_info.target_width),
+                        str(video_info.target_height), video_info.crf, video_info.preset,
+                        threads, video_info.target_fps, close_window=False,
+                        input_duration=input_duration, input_fps=input_fps
+                    )
+                
+                # Update status to Completed if not cancelled
+                if not self.processor._cancel_requested:
+                    video_info.status_done = "Completed"
+                    self._safe_after(0, lambda idx=index: self._update_video_status(idx, "Completed"))
+                    # Update progress count
+                    completed_count = sum(1 for v in self.videos if v.status_done == "Completed")
+                    total_count = len(self.videos)
+                    self._safe_after(0, lambda c=completed_count, t=total_count: 
+                                   self.progress_labels["Files Processed:"].config(text=f"{c}/{t}"))
+            except Exception as e:
+                # Update status to Error
+                video_info.status_done = "Error"
+                self._safe_after(0, lambda idx=index: self._update_video_status(idx, "Error"))
+                self._safe_after(0, lambda msg=str(e), file=os.path.basename(input_file): 
+                               self.status_text.insert("end", f"Error processing {file}: {msg}\n"))
         
+        # Processing complete
         self.processing = False
-        self.window.after(0, lambda: self.run_btn.config(state="normal"))
-        self.window.after(0, lambda: self._update_video_status(0, "Completed"))
-    
-    def _process_batch(self, threads: int):
-        """Process multiple videos."""
-        # Group videos by folder
-        folders = {}
-        for video_info in self.videos:
-            folder = os.path.dirname(video_info.video_path)
-            if folder not in folders:
-                folders[folder] = []
-            folders[folder].append(video_info)
-        
-        # Process each folder
-        total_files = len(self.videos)
-        processed = 0
-        
-        self.window.after(0, lambda: self.progress_labels["Total Files:"].config(text=str(total_files)))
-        
-        for folder, videos in folders.items():
-            output_folder = self.output_folder.get().strip() or folder
-            
-            # Use first video's settings (they should all be the same after _run_processing)
-            video_info = videos[0]
-            
-            self.batch_processor.process_videos_in_folder(
-                folder, self.progress_labels, self.status_text, self.window,
-                video_info.use_gpu, threads, output_folder, video_info.is_vertical,
-                str(video_info.target_width), str(video_info.target_height),
-                video_info.crf, video_info.preset, video_info.target_fps
-            )
-            
-            processed += len(videos)
-            self.window.after(0, lambda p=processed: self.progress_labels["Files Processed:"].config(text=str(p)))
-        
-        self.processing = False
-        self.window.after(0, lambda: self.run_btn.config(state="normal"))
+        self._current_file_index = None
+        self._safe_after(0, lambda: self.run_btn.config(state="normal"))
+        self._safe_after(0, lambda: self.progress_labels["Current File:"].config(text="-"))
     
     def _update_video_status(self, index: int, status: str):
-        """Update video status in table."""
+        """Update video status in table and VideoInfo object."""
         items = self.video_tree.get_children()
-        if 0 <= index < len(items):
+        if 0 <= index < len(items) and 0 <= index < len(self.videos):
             item = items[index]
             values = list(self.video_tree.item(item, "values"))
             values[4] = status
             self.video_tree.item(item, values=values)
+            # Also update the VideoInfo object
+            self.videos[index].status_done = status
     
     def _cancel_processing(self):
         """Cancel processing."""
         self.processor.cancel()
-        self.batch_processor.cancel()
+        # Update current file status back to Pending if it was processing
+        current_idx = self._current_file_index
+        if current_idx is not None and 0 <= current_idx < len(self.videos):
+            if self.videos[current_idx].status_done == "Processing":
+                self._safe_after(0, lambda idx=current_idx: self._update_video_status(idx, "Pending"))
         self.processing = False
-        self.window.after(0, lambda: self.run_btn.config(state="normal"))
+        self._current_file_index = None
+        self._safe_after(0, lambda: self.run_btn.config(state="normal"))
+        
+    def _safe_after(self, delay_ms: int, callback):
+        """Safely schedule a callback with after(), tracking it for cleanup."""
+        def safe_callback():
+            try:
+                # Check if window still exists and we're not destroying
+                if not self._is_destroying and self.window.winfo_exists():
+                    callback()
+            except (tk.TclError, AttributeError):
+                # Window was destroyed, ignore
+                pass
+        
+        callback_id = self.window.after(delay_ms, safe_callback)
+        self._pending_callbacks.append(callback_id)
+        return callback_id
+    
+    def _cancel_all_callbacks(self):
+        """Cancel all pending after() callbacks."""
+        self._is_destroying = True
+        for callback_id in self._pending_callbacks:
+            try:
+                self.window.after_cancel(callback_id)
+            except (tk.TclError, AttributeError):
+                # Window already destroyed or callback already executed
+                pass
+        self._pending_callbacks.clear()
     
     def _exit_window(self):
         """Close the window."""
@@ -830,9 +870,18 @@ class UnifiedProcessingWindow:
                                        "Processing is in progress. Do you want to cancel and exit?"):
                 return
             self._cancel_processing()
-        self.window.destroy()
+        # Cancel all pending callbacks before destroying
+        self._cancel_all_callbacks()
+        try:
+            self.window.destroy()
+        except tk.TclError:
+            # Window already destroyed
+            pass
     
     def run(self):
         """Run the window mainloop."""
         self.window.mainloop()
 
+    def close(self):
+        """Close the window."""
+        self._exit_window()

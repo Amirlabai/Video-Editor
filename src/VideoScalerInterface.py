@@ -34,22 +34,30 @@ def get_rgb(rgb):
     """
     return "#%02x%02x%02x" % rgb
 
-def window():
+def root_window():
     # Load UI colors from config
     config = get_config_manager()
     windowBg, buttonBg, activeButtonBg = config.get_ui_colors()
+    window = None
 
     def close_program():
+        nonlocal window
+        if window is not None:
+            window.close()
         root.destroy()
         root.quit()
 
     def scale_video():
-        window = UnifiedProcessingWindow(windowBg, buttonBg, activeButtonBg)
-        window.run()
+        nonlocal window
+        if not window:
+            window = UnifiedProcessingWindow(root, windowBg, buttonBg, activeButtonBg)
+            window.run()
 
     def join_videos():
-        window = JoinWindow(windowBg, buttonBg, activeButtonBg)
-        window.run()
+        nonlocal window
+        if not window:
+            window = JoinWindow(root, windowBg, buttonBg, activeButtonBg)
+            window.run()
 
     def show_settings():
         """Show settings/preferences dialog."""
@@ -194,7 +202,7 @@ You can manually edit the JSON config file for advanced customization.""")
     root.mainloop()
 
 def main():
-    window()
+    root_window()
 
 if __name__ == "__main__":
     main()
