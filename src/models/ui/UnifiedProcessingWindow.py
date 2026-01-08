@@ -4,6 +4,7 @@ Unified Processing Window for single and batch video processing.
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+import customtkinter as ctk
 from typing import List, Optional, Dict
 from threading import Thread
 from datetime import datetime
@@ -27,7 +28,7 @@ class UnifiedProcessingWindow:
     """Unified window for batch video processing with all options."""
     def __init__(
         self,
-        root: tk.Tk,
+        root: ctk.CTk,
         window_bg: str = DEFAULT_WINDOW_BG,
         button_bg: str = DEFAULT_BUTTON_BG,
         active_button_bg: str = DEFAULT_ACTIVE_BUTTON_BG
@@ -65,23 +66,47 @@ class UnifiedProcessingWindow:
         self.default_use_gpu = False
         self.default_use_all_cores = False
         
-        # Initialize settings (use reset defaults for initial display)
+        # Load encoding settings from config
+        saved_crf, saved_preset, saved_resolution = self.config.get_encoding_settings()
+        
+        # Initialize settings (load from config if available, otherwise use defaults)
         self.use_gpu = tk.BooleanVar(value=self.default_use_gpu)
         self.use_all_cores = tk.BooleanVar(value=self.default_use_all_cores)
         self.cap_cpu_50 = tk.BooleanVar(value=False)
-        self.target_fps = tk.StringVar(value=self.default_fps)
-        self.resolution = tk.StringVar(value='FHD (1920x1050)')
-        self.target_width = tk.StringVar(value=str(self.default_width))
-        self.target_height = tk.StringVar(value=str(self.default_height))
-        self.crf = tk.StringVar(value=self.default_crf)
-        self.preset = tk.StringVar(value=self.default_preset)
+        
+        # Load FPS from config if available
+        saved_fps = self.config.get_target_fps()
+        if saved_fps is not None:
+            # Find closest FPS option
+            closest_fps = min(self.FPS_OPTIONS, key=lambda x: abs(float(x) - saved_fps))
+            self.target_fps = tk.StringVar(value=closest_fps)
+        else:
+            self.target_fps = tk.StringVar(value=self.default_fps)
+        
+        # Load resolution from config
+        resolution_map = {"HD": self.RESOLUTION_OPTIONS[0], "FHD": self.RESOLUTION_OPTIONS[1], "4K": self.RESOLUTION_OPTIONS[2]}
+        initial_resolution = resolution_map.get(saved_resolution, self.RESOLUTION_OPTIONS[1])  # Default to FHD
+        self.resolution = tk.StringVar(value=initial_resolution)
+        
+        # Set width/height based on resolution
+        if initial_resolution == self.RESOLUTION_OPTIONS[0]:  # HD
+            initial_width, initial_height = HD_WIDTH, HD_HEIGHT
+        elif initial_resolution == self.RESOLUTION_OPTIONS[1]:  # FHD
+            initial_width, initial_height = FHD_WIDTH, FHD_HEIGHT
+        else:  # 4K
+            initial_width, initial_height = UHD_4K_WIDTH, UHD_4K_HEIGHT
+        
+        self.target_width = tk.StringVar(value=str(initial_width))
+        self.target_height = tk.StringVar(value=str(initial_height))
+        
+        # Load CRF and preset from config
+        self.crf = tk.StringVar(value=saved_crf if saved_crf else self.default_crf)
+        self.preset = tk.StringVar(value=saved_preset if saved_preset else self.default_preset)
         # Load last output folder from config
         last_output_folder = self.config.get_last_output_folder()
         self.output_folder = tk.StringVar(value=last_output_folder if last_output_folder else "")
-        
         # Create window
-        self.window = tk.Toplevel(root)
-        self.window.configure(bg=window_bg)
+        self.window = ctk.CTkToplevel(root)
         self.window.title("Video Processor")
         self.window.state('zoomed')
         # Ensure cleanup when window is closed
@@ -91,6 +116,8 @@ class UnifiedProcessingWindow:
         self._check_gpu_availability()
         # Initialize resolution values based on default selection
         self._update_resolution_from_combo()
+
+        self.running = True
     
     def _check_gpu_availability(self):
         """Check if GPU is available."""
@@ -100,23 +127,24 @@ class UnifiedProcessingWindow:
             gpu_available = "h264_nvenc" in result.stdout
             if not gpu_available:
                 self.use_gpu.set(False)
-                self.gpu_checkbox.config(state="disabled")
+                self.gpu_checkbox.configure(state="disabled")
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, Exception):
             self.use_gpu.set(False)
-            self.gpu_checkbox.config(state="disabled")
+            self.gpu_checkbox.configure(state="disabled")
     
     def _create_ui(self):
         """Create the UI layout."""
         # Main container with paned window for resizable panels
+        # Use tk.PanedWindow as customtkinter doesn't have equivalent
         main_paned = tk.PanedWindow(self.window, orient=tk.HORIZONTAL, bg=self.window_bg)
         main_paned.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Left panel - Settings (fill vertically)
-        left_frame = tk.Frame(main_paned, bg=self.window_bg)
+        left_frame = ctk.CTkFrame(main_paned, fg_color=self.window_bg)
         main_paned.add(left_frame, width=400, minsize=350)
         
         # Right panel - Video table, progress, buttons, status
-        right_frame = tk.Frame(main_paned, bg=self.window_bg)
+        right_frame = ctk.CTkFrame(main_paned, fg_color=self.window_bg)
         main_paned.add(right_frame, width=800, minsize=600)
         
         self._create_settings_panel(left_frame)
@@ -125,147 +153,143 @@ class UnifiedProcessingWindow:
     def _create_settings_panel(self, parent):
         """Create the settings panel on the left."""
         # Settings frame
-        settings_frame = tk.Frame(parent, bg=self.window_bg)
+        settings_frame = ctk.CTkFrame(parent, fg_color=self.window_bg)
         settings_frame.pack(fill="both", expand=True)
         
         # Performance Settings
-        perf_frame = tk.LabelFrame(settings_frame, text="Performance Settings", 
-                                   bg=self.window_bg, fg="white", font=("Arial", "11", "bold"))
+        perf_frame = ctk.CTkFrame(settings_frame, fg_color=self.window_bg)
         perf_frame.pack(fill="x", padx=5, pady=5)
+        perf_label = ctk.CTkLabel(perf_frame, text="Performance Settings", 
+                                  font=ctk.CTkFont(size=18, weight="bold"))
+        perf_label.pack(anchor="w", padx=10, pady=(5, 0))
         
         # GPU option
-        self.gpu_checkbox = tk.Checkbutton(
+        self.gpu_checkbox = ctk.CTkCheckBox(
             perf_frame, text="Use GPU encoding (NVENC)", variable=self.use_gpu,
-            bg=self.window_bg, fg="white", selectcolor=self.active_button_bg,
-            font=("Arial", "10")
         )
         self.gpu_checkbox.pack(anchor="w", padx=10, pady=5)
         
         # Threading option
-        threading_checkbox = tk.Checkbutton(
+        threading_checkbox = ctk.CTkCheckBox(
             perf_frame, text=f"Use all CPU cores ({self.cpu_cores} threads)", 
             variable=self.use_all_cores,
-            bg=self.window_bg, fg="white", selectcolor=self.active_button_bg,
-            font=("Arial", "10")
         )
         threading_checkbox.pack(anchor="w", padx=10, pady=5)
         
         # CPU cap option
-        cpu_cap_checkbox = tk.Checkbutton(
+        cpu_cap_checkbox = ctk.CTkCheckBox(
             perf_frame, text="Cap CPU usage at 50%", variable=self.cap_cpu_50,
-            bg=self.window_bg, fg="white", selectcolor=self.active_button_bg,
-            font=("Arial", "10")
         )
         cpu_cap_checkbox.pack(anchor="w", padx=10, pady=5)
         
         # Video Settings
-        video_frame = tk.LabelFrame(settings_frame, text="Video Settings", 
-                                    bg=self.window_bg, fg="white", font=("Arial", "11", "bold"))
+        video_frame = ctk.CTkFrame(settings_frame, fg_color=self.window_bg)
         video_frame.pack(fill="x", padx=5, pady=5)
+        video_label = ctk.CTkLabel(video_frame, text="Video Settings", 
+                                   font=ctk.CTkFont(size=18, weight="bold"))
+        video_label.pack(anchor="w", padx=10, pady=(5, 0))
         
         # FPS
-        fps_frame = tk.Frame(video_frame, bg=self.window_bg)
+        fps_frame = ctk.CTkFrame(video_frame, fg_color=self.window_bg)
         fps_frame.pack(fill="x", padx=10, pady=5)
-        tk.Label(fps_frame, text="Target FPS:", 
-                bg=self.window_bg, fg="white", font=("Arial", "9")).pack(anchor="w")
-        self.fps_combo = ttk.Combobox(fps_frame, textvariable=self.target_fps, 
-                                values=self.FPS_OPTIONS, 
-                                state="readonly")
+        ctk.CTkLabel(fps_frame, text="Target FPS:").pack(anchor="w")
+        self.fps_combo = ctk.CTkComboBox(fps_frame, values=self.FPS_OPTIONS,
+                                         variable=self.target_fps,
+                                         command=self._on_fps_change,
+                                         state="readonly")
         self.fps_combo.pack(fill="x", pady=2)
-        self.fps_combo.bind("<<ComboboxSelected>>", self._on_fps_change)
-        # Set initial value by finding index
+        # Set initial value
         try:
             initial_index = self.FPS_OPTIONS.index(self.target_fps.get())
-            self.fps_combo.current(initial_index)
+            self.fps_combo.set(self.FPS_OPTIONS[initial_index])
         except ValueError:
-            self.fps_combo.current(0)  # Default to first value (12)
+            self.fps_combo.set(self.FPS_OPTIONS[0])
         
         # Resolution
-        res_frame = tk.Frame(video_frame, bg=self.window_bg)
+        res_frame = ctk.CTkFrame(video_frame, fg_color=self.window_bg)
         res_frame.pack(fill="x", padx=10, pady=5)
-        tk.Label(res_frame, text="Resolution:", bg=self.window_bg, fg="white", 
-                font=("Arial", "9")).pack(anchor="w")
+        ctk.CTkLabel(res_frame, text="Resolution:").pack(anchor="w")
         
-        self.resolution_combo = ttk.Combobox(res_frame, textvariable=self.resolution,
-                                       values=self.RESOLUTION_OPTIONS,
-                                       state="readonly")
+        self.resolution_combo = ctk.CTkComboBox(res_frame, values=self.RESOLUTION_OPTIONS,
+                                                variable=self.resolution,
+                                                command=self._on_resolution_change,
+                                                state="readonly")
         self.resolution_combo.pack(fill="x", pady=2)
-        self.resolution_combo.bind("<<ComboboxSelected>>", self._on_resolution_change)
-        # Set initial value by finding index
+        # Set initial value
         try:
             initial_index = self.RESOLUTION_OPTIONS.index(self.resolution.get())
-            self.resolution_combo.current(initial_index)
+            self.resolution_combo.set(self.RESOLUTION_OPTIONS[initial_index])
         except ValueError:
-            self.resolution_combo.current(0)  # Default to HD
+            self.resolution_combo.set(self.RESOLUTION_OPTIONS[0])
         
         # Encoding Settings
-        encoding_frame = tk.LabelFrame(settings_frame, text="Encoding Settings", 
-                                      bg=self.window_bg, fg="white", font=("Arial", "11", "bold"))
+        encoding_frame = ctk.CTkFrame(settings_frame, fg_color=self.window_bg)
         encoding_frame.pack(fill="x", padx=5, pady=5)
+        encoding_label = ctk.CTkLabel(encoding_frame, text="Encoding Settings", 
+                                      font=ctk.CTkFont(size=18, weight="bold"))
+        encoding_label.pack(anchor="w", padx=10, pady=(5, 0))
         
         # CRF
-        crf_frame = tk.Frame(encoding_frame, bg=self.window_bg)
+        crf_frame = ctk.CTkFrame(encoding_frame, fg_color=self.window_bg)
         crf_frame.pack(fill="x", padx=10, pady=5)
-        tk.Label(crf_frame, text=f"CRF ({CRF_MIN}-{CRF_MAX}, lower=better quality):", 
-                bg=self.window_bg, fg="white", font=("Arial", "9")).pack(anchor="w")
+        ctk.CTkLabel(crf_frame, text=f"CRF ({CRF_MIN}-{CRF_MAX}, lower=better quality):").pack(anchor="w")
         crf_values = [str(i) for i in range(CRF_MIN, CRF_MAX + 1)]
-        self.crf_combo = ttk.Combobox(crf_frame, textvariable=self.crf, 
-                                values=crf_values, state="readonly")
+        self.crf_combo = ctk.CTkComboBox(crf_frame, values=crf_values,
+                                         variable=self.crf,
+                                         command=self._on_crf_change,
+                                         state="readonly")
         self.crf_combo.pack(fill="x", pady=2)
-        self.crf_combo.bind("<<ComboboxSelected>>", self._on_crf_change)
-        # Set initial value by finding index
+        # Set initial value
         try:
             initial_index = crf_values.index(self.crf.get())
-            self.crf_combo.current(initial_index)
+            self.crf_combo.set(crf_values[initial_index])
         except ValueError:
-            self.crf_combo.current(len(crf_values) - 1)  # Default to last value (30)
+            self.crf_combo.set(crf_values[-1])  # Default to last value (30)
         
         # Preset
-        preset_frame = tk.Frame(encoding_frame, bg=self.window_bg)
+        preset_frame = ctk.CTkFrame(encoding_frame, fg_color=self.window_bg)
         preset_frame.pack(fill="x", padx=10, pady=5)
-        tk.Label(preset_frame, text="Preset:", bg=self.window_bg, fg="white", 
-                font=("Arial", "9")).pack(anchor="w")
-        self.preset_combo = ttk.Combobox(preset_frame, textvariable=self.preset, 
-                                    values=PRESET_OPTIONS, state="readonly")
+        ctk.CTkLabel(preset_frame, text="Preset:").pack(anchor="w")
+        self.preset_combo = ctk.CTkComboBox(preset_frame, values=PRESET_OPTIONS,
+                                           variable=self.preset,
+                                           command=self._on_preset_change,
+                                           state="readonly")
         self.preset_combo.pack(fill="x", pady=2)
-        self.preset_combo.bind("<<ComboboxSelected>>", self._on_preset_change)
-        # Set initial value by finding index
+        # Set initial value
         try:
             initial_index = PRESET_OPTIONS.index(self.preset.get())
-            self.preset_combo.current(initial_index)
+            self.preset_combo.set(PRESET_OPTIONS[initial_index])
         except ValueError:
-            self.preset_combo.current(0)  # Default to first value
+            self.preset_combo.set(PRESET_OPTIONS[0])  # Default to first value
         
         # Output Settings
-        output_frame = tk.LabelFrame(settings_frame, text="Output Settings", 
-                                    bg=self.window_bg, fg="white", font=("Arial", "11", "bold"))
+        output_frame = ctk.CTkFrame(settings_frame, fg_color=self.window_bg)
         output_frame.pack(fill="x", padx=5, pady=5)
+        output_label = ctk.CTkLabel(output_frame, text="Output Settings", 
+                                    font=ctk.CTkFont(size=18, weight="bold"))
+        output_label.pack(anchor="w", padx=10, pady=(5, 0))
         
-        output_path_frame = tk.Frame(output_frame, bg=self.window_bg)
+        output_path_frame = ctk.CTkFrame(output_frame, fg_color=self.window_bg)
         output_path_frame.pack(fill="x", padx=10, pady=5)
-        tk.Label(output_path_frame, text="Output Folder (leave empty to use input folder):", 
-                bg=self.window_bg, fg="white", font=("Arial", "9")).pack(anchor="w")
-        output_path_container = tk.Frame(output_path_frame, bg=self.window_bg)
+        ctk.CTkLabel(output_path_frame, text="Output Folder (leave empty to use input folder):").pack(anchor="w")
+        output_path_container = ctk.CTkFrame(output_path_frame, fg_color=self.window_bg)
         output_path_container.pack(fill="x", pady=2)
+        
         # Create label for displaying output folder (read-only)
         folder_value = self.output_folder.get()
-        display_text = folder_value if folder_value else "(empty - will use input folder)"
-        self.output_folder_label = tk.Label(output_path_container, 
-                                           text=display_text,
-                                           bg=self.button_bg, fg="white", 
-                                           font=("Arial", "9"),
-                                           anchor="w", relief="sunken", padx=5, pady=2)
-        self.output_folder_label.pack(fill="x", side="left", expand=True)
-        tk.Button(output_path_container, text="Browse", command=self._browse_output_folder,
-                 bg=self.button_bg, fg="white", font=("Arial", "8"),
-                 activebackground=self.active_button_bg).pack(side="left", padx=2)
+        display_text = self._turncate_folder_name(folder_value) if folder_value else "(empty - will use input folder)"
+        self.output_folder_label = ctk.CTkLabel(output_path_container, 
+                                               text=display_text,
+                                               font=ctk.CTkFont(size=11),
+                                               anchor="w")
+        self.output_folder_label.pack(side="left", padx=5)
+        ctk.CTkButton(output_path_container, text="Browse", command=self._browse_output_folder,width=80).pack(side="right", padx=2)
         
         # Reset to Defaults Button
-        reset_frame = tk.Frame(settings_frame, bg=self.window_bg)
+        reset_frame = ctk.CTkFrame(settings_frame, fg_color=self.window_bg)
         reset_frame.pack(fill="x", padx=5, pady=10)
-        tk.Button(reset_frame, text="Reset to Default Settings", command=self._reset_to_defaults,
-                 bg=self.button_bg, fg="white", font=("Arial", "10", "bold"),
-                 activebackground=self.active_button_bg, activeforeground="white", borderwidth=2).pack(fill="x", padx=5)
+        ctk.CTkButton(reset_frame, text="Reset to Default Settings", command=self._reset_to_defaults,
+                     font=ctk.CTkFont(weight="bold")).pack(fill="x", padx=5)
     
     def _create_right_panel(self, parent):
         """Create the right panel with video table, progress, buttons, and status."""
@@ -273,63 +297,64 @@ class UnifiedProcessingWindow:
         self._create_video_table(parent)
         
         # Bottom buttons
-        button_frame = tk.Frame(parent, bg=self.window_bg)
+        button_frame = ctk.CTkFrame(parent, fg_color=self.window_bg)
         button_frame.pack(fill="x", padx=5, pady=5)
         
-        self.add_files_btn = tk.Button(
+        self.add_files_btn = ctk.CTkButton(
             button_frame, text="Add Files", command=self._add_files,
-            bg=self.button_bg, fg="white", font=("Arial", "10", "bold"),
-            activebackground=self.active_button_bg, activeforeground="white", borderwidth=2
+            font=ctk.CTkFont(weight="bold")
         )
         self.add_files_btn.pack(side="left", padx=5)
         
-        self.add_folder_btn = tk.Button(
+        self.add_folder_btn = ctk.CTkButton(
             button_frame, text="Add Folder", command=self._add_folder,
-            bg=self.button_bg, fg="white", font=("Arial", "10", "bold"),
-            activebackground=self.active_button_bg, activeforeground="white", borderwidth=2
+            font=ctk.CTkFont(weight="bold")
         )
         self.add_folder_btn.pack(side="left", padx=5)
         
-        self.remove_btn = tk.Button(
+        self.remove_btn = ctk.CTkButton(
             button_frame, text="Remove Selected", command=self._remove_selected,
-            bg=self.button_bg, fg="white", font=("Arial", "10", "bold"),
-            activebackground=self.active_button_bg, activeforeground="white", borderwidth=2
+            font=ctk.CTkFont(weight="bold")
         )
         self.remove_btn.pack(side="left", padx=5)
         
         # Progress section
-        self.progress_frame = tk.LabelFrame(parent, text="Progress", 
-                                           bg=self.window_bg, fg="white", font=("Arial", "12", "bold"))
+        self.progress_frame = ctk.CTkFrame(parent, fg_color=self.window_bg)
         self.progress_frame.pack(fill="x", padx=5, pady=5)
+        progress_label = ctk.CTkLabel(self.progress_frame, text="Progress", 
+                                     font=ctk.CTkFont(size=18, weight="bold"))
+        progress_label.pack(anchor="w", padx=5, pady=(5, 0))
+        # Create a separate frame for grid layout
+        self.progress_grid_frame = ctk.CTkFrame(self.progress_frame, fg_color=self.window_bg)
+        self.progress_grid_frame.pack(fill="x", padx=5, pady=5)
         self.progress_labels = {}
         self._create_progress_labels()
         
         # Status text
-        self.status_text = tk.Text(parent, height=4, width=100, bg=self.button_bg, fg="white")
+        self.status_text = ctk.CTkTextbox(parent, height=100)
         self.status_text.pack(fill="both", expand=True, padx=5, pady=5)
         
         # Action buttons
-        action_frame = tk.Frame(parent, bg=self.window_bg)
+        action_frame = ctk.CTkFrame(parent, fg_color=self.window_bg)
         action_frame.pack(fill="x", padx=5, pady=5)
         
-        self.run_btn = tk.Button(
+        self.run_btn = ctk.CTkButton(
             action_frame, text="▶ Run", command=self._run_processing,
-            bg="#4CAF50", fg="white", font=("Arial", "12", "bold"),
-            activebackground="#45a049", activeforeground="white", borderwidth=2
+            fg_color="#4CAF50", hover_color="#45a049",
+            font=ctk.CTkFont(weight="bold")
         )
         self.run_btn.pack(side="left", padx=5)
         
-        self.cancel_btn = tk.Button(
+        self.cancel_btn = ctk.CTkButton(
             action_frame, text="❌ Cancel", command=self._cancel_processing,
-            bg=CANCEL_BUTTON_BG, fg="white", font=("Arial", "12", "bold"),
-            activebackground=CANCEL_BUTTON_ACTIVE_BG, activeforeground="white", borderwidth=2
+            fg_color=CANCEL_BUTTON_BG, hover_color=CANCEL_BUTTON_ACTIVE_BG,
+            font=ctk.CTkFont(weight="bold")
         )
         self.cancel_btn.pack(side="left", padx=5)
         
-        self.exit_btn = tk.Button(
+        self.exit_btn = ctk.CTkButton(
             action_frame, text="Exit", command=self._exit_window,
-            bg=self.button_bg, fg="white", font=("Arial", "12", "bold"),
-            activebackground=self.active_button_bg, activeforeground="white", borderwidth=2
+            font=ctk.CTkFont(weight="bold")
         )
         self.exit_btn.pack(side="right", padx=5)
     
@@ -346,26 +371,38 @@ class UnifiedProcessingWindow:
             self.target_width.set(str(UHD_4K_WIDTH))
             self.target_height.set(str(UHD_4K_HEIGHT))
     
-    def _on_crf_change(self, event=None):
+    def _on_crf_change(self, value=None):
         """Handle CRF combo box change."""
-        # Ensure self.crf is synced with the combo box selection
-        selected_value = self.crf_combo.get()
-        if selected_value:
-            self.crf.set(selected_value)
+        # CTkComboBox passes value directly to command
+        if value:
+            self.crf.set(value)
+        else:
+            # Fallback: get from combo box
+            selected_value = self.crf_combo.get()
+            if selected_value:
+                self.crf.set(selected_value)
     
-    def _on_fps_change(self, event=None):
+    def _on_fps_change(self, value=None):
         """Handle FPS combo box change."""
-        # Ensure self.target_fps is synced with the combo box selection
-        selected_value = self.fps_combo.get()
-        if selected_value:
-            self.target_fps.set(selected_value)
+        # CTkComboBox passes value directly to command
+        if value:
+            self.target_fps.set(value)
+        else:
+            # Fallback: get from combo box
+            selected_value = self.fps_combo.get()
+            if selected_value:
+                self.target_fps.set(selected_value)
     
-    def _on_preset_change(self, event=None):
+    def _on_preset_change(self, value=None):
         """Handle Preset combo box change."""
-        # Ensure self.preset is synced with the combo box selection
-        selected_value = self.preset_combo.get()
-        if selected_value:
-            self.preset.set(selected_value)
+        # CTkComboBox passes value directly to command
+        if value:
+            self.preset.set(value)
+        else:
+            # Fallback: get from combo box
+            selected_value = self.preset_combo.get()
+            if selected_value:
+                self.preset.set(selected_value)
     
     def _update_resolution_from_combo(self):
         """Update resolution values from combo box selection."""
@@ -404,27 +441,27 @@ class UnifiedProcessingWindow:
         self.use_all_cores.set(self.default_use_all_cores)
         self.cap_cpu_50.set(False)
         
-        # Update combo box current indices using the values
+        # Update combo box values using .set() for CTkComboBox
         try:
-            self.fps_combo.current(self.FPS_OPTIONS.index(self.target_fps.get()))
+            self.fps_combo.set(self.target_fps.get())
         except ValueError:
-            self.fps_combo.current(0)
+            self.fps_combo.set(self.FPS_OPTIONS[0])
         
         try:
-            self.resolution_combo.current(self.RESOLUTION_OPTIONS.index(self.resolution.get()))
+            self.resolution_combo.set(self.resolution.get())
         except ValueError:
-            self.resolution_combo.current(0)
+            self.resolution_combo.set(self.RESOLUTION_OPTIONS[0])
         
         crf_values = [str(i) for i in range(CRF_MIN, CRF_MAX + 1)]
         try:
-            self.crf_combo.current(crf_values.index(self.crf.get()))
+            self.crf_combo.set(self.crf.get())
         except ValueError:
-            self.crf_combo.current(len(crf_values) - 1)
+            self.crf_combo.set(crf_values[-1])
         
         try:
-            self.preset_combo.current(PRESET_OPTIONS.index(self.preset.get()))
+            self.preset_combo.set(self.preset.get())
         except ValueError:
-            self.preset_combo.current(0)
+            self.preset_combo.set(PRESET_OPTIONS[0])
         
         self._on_resolution_change()
     
@@ -436,21 +473,10 @@ class UnifiedProcessingWindow:
             # Verify closest_fps is in the options
             if closest_fps in self.FPS_OPTIONS:
                 try:
-                    fps_index = self.FPS_OPTIONS.index(closest_fps)
                     # Set StringVar first
                     self.target_fps.set(closest_fps)
-                    # Update combobox: change state, set current, set back to readonly
-                    self.fps_combo.config(state="normal")
-                    self.fps_combo.current(fps_index)
-                    # Verify the value was set
-                    current_value = self.fps_combo.get()
-                    if current_value != closest_fps:
-                        # If not set correctly, try setting it directly
-                        self.fps_combo.set(closest_fps)
-                    self.fps_combo.config(state="readonly")
-                    # Double-check StringVar matches
-                    if self.target_fps.get() != closest_fps:
-                        self.target_fps.set(closest_fps)
+                    # Update CTkComboBox using .set()
+                    self.fps_combo.set(closest_fps)
                 except Exception as e:
                     # Fallback: just set StringVar
                     self.target_fps.set(closest_fps)
@@ -464,28 +490,24 @@ class UnifiedProcessingWindow:
         if video_info.width is not None and video_info.height is not None and hasattr(self, 'resolution_combo'):
             resolution_str = self._map_resolution_to_combo(video_info.width, video_info.height)
             try:
-                res_index = self.RESOLUTION_OPTIONS.index(resolution_str)
-                # Temporarily change state to update value, then set back to readonly
-                self.resolution_combo.config(state="normal")
+                # Set StringVar and CTkComboBox
                 self.resolution.set(resolution_str)
-                self.resolution_combo.current(res_index)
-                self.resolution_combo.config(state="readonly")
+                self.resolution_combo.set(resolution_str)
             except (ValueError, AttributeError):
                 # Fallback: just set the StringVar
                 try:
-                    self.resolution_combo.config(state="normal")
                     self.resolution.set(resolution_str)
-                    self.resolution_combo.config(state="readonly")
+                    self.resolution_combo.set(resolution_str)
                 except:
                     pass
             self._on_resolution_change()
     
     def _create_video_table(self, parent):
         """Create the video table on the right."""
-        table_frame = tk.Frame(parent, bg=self.window_bg)
+        table_frame = ctk.CTkFrame(parent, fg_color=self.window_bg)
         table_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # Table with scrollbar
+        # Table with scrollbar - Keep using ttk.Treeview as customtkinter doesn't have equivalent
         scrollbar = tk.Scrollbar(table_frame)
         scrollbar.pack(side="right", fill="y")
         
@@ -530,12 +552,13 @@ class UnifiedProcessingWindow:
             row = i // 2
             col = (i % 2) * 2
             
-            label = tk.Label(self.progress_frame, text=label_text, bg=self.window_bg, fg="white", 
-                           font=("Arial", "9", "bold"), anchor="w")
+            label = ctk.CTkLabel(self.progress_grid_frame, text=label_text, 
+                               font=ctk.CTkFont(weight="bold"), anchor="w")
             label.grid(row=row, column=col, sticky="w", padx=5, pady=2)
             
-            value_label = tk.Label(self.progress_frame, text=initial_value, bg=self.window_bg, fg="#FFD700", 
-                                 font=("Arial", "9", "bold"), anchor="w")
+            value_label = ctk.CTkLabel(self.progress_grid_frame, text=initial_value, 
+                                      text_color="#FFD700",
+                                      font=ctk.CTkFont(weight="bold"), anchor="w")
             value_label.grid(row=row, column=col+1, sticky="w", padx=5, pady=2)
             self.progress_labels[label_text] = value_label
     
@@ -623,10 +646,17 @@ class UnifiedProcessingWindow:
             initialdir=last_output_folder if last_output_folder and os.path.exists(last_output_folder) else None
         )
         if folder:
+            display_text = self._turncate_folder_name(folder)
             self.config.set_last_output_folder(folder)
             self.output_folder.set(folder)
-            # Update the display label
-            self.output_folder_label.config(text=folder)
+            self.output_folder_label.configure(text=display_text)
+
+    def _turncate_folder_name(self, folder_name: str) -> str:
+        max_chars = 50  # Maximum characters to display
+        if len(folder_name) > max_chars:
+            return "..." + folder_name[-(max_chars-3):]
+        else:
+            return folder_name
     
     def _format_size(self, size_bytes: int) -> str:
         """Format file size."""
@@ -708,9 +738,27 @@ class UnifiedProcessingWindow:
         if target_fps:
             self.config.set_target_fps(target_fps)
         
+        # Save encoding settings (CRF, preset, resolution)
+        resolution_selected = self.resolution.get()
+        # Map resolution combo box value to config format
+        if resolution_selected == self.RESOLUTION_OPTIONS[0]:  # HD
+            resolution_str = "HD"
+        elif resolution_selected == self.RESOLUTION_OPTIONS[1]:  # FHD
+            resolution_str = "FHD"
+        elif resolution_selected == self.RESOLUTION_OPTIONS[2]:  # 4K
+            resolution_str = "4K"
+        else:
+            resolution_str = "FHD"  # Default
+        
+        self.config.set_encoding_settings(
+            self.crf.get(),
+            self.preset.get(),
+            resolution_str
+        )
+        
         # Start processing
         self.processing = True
-        self.run_btn.config(state="disabled")
+        self.run_btn.configure(state="disabled")
         
         # Process files from queue one by one
         Thread(target=self._process_queue, args=(threads,)).start()
@@ -725,11 +773,11 @@ class UnifiedProcessingWindow:
         if total_files == 0:
             self._safe_after(0, lambda: messagebox.showinfo("No Files to Process", "All files are already completed."))
             self.processing = False
-            self._safe_after(0, lambda: self.run_btn.config(state="normal"))
+            self._safe_after(0, lambda: self.run_btn.configure(state="normal"))
             return
         
-        self._safe_after(0, lambda: self.progress_labels["Total Files:"].config(text=str(total_files + completed_files)))
-        self._safe_after(0, lambda c=completed_files: self.progress_labels["Files Processed:"].config(text=f"{c}/{total_files + completed_files}"))
+        self._safe_after(0, lambda: self.progress_labels["Total Files:"].configure(text=str(total_files + completed_files)))
+        self._safe_after(0, lambda c=completed_files: self.progress_labels["Files Processed:"].configure(text=f"{c}/{total_files + completed_files}"))
         
         # Process each file in the queue
         for index, video_info in enumerate(self.videos):
@@ -750,7 +798,7 @@ class UnifiedProcessingWindow:
             video_info.status_done = "Processing"
             self._safe_after(0, lambda idx=index: self._update_video_status(idx, "Processing"))
             self._safe_after(0, lambda name=os.path.basename(video_info.video_path): 
-                           self.progress_labels["Current File:"].config(text=name))
+                           self.progress_labels["Current File:"].configure(text=name))
             
             # Determine output path
             input_file = video_info.video_path
@@ -800,7 +848,7 @@ class UnifiedProcessingWindow:
                     completed_count = sum(1 for v in self.videos if v.status_done == "Completed")
                     total_count = len(self.videos)
                     self._safe_after(0, lambda c=completed_count, t=total_count: 
-                                   self.progress_labels["Files Processed:"].config(text=f"{c}/{t}"))
+                                   self.progress_labels["Files Processed:"].configure(text=f"{c}/{t}"))
             except Exception as e:
                 # Update status to Error
                 video_info.status_done = "Error"
@@ -811,8 +859,8 @@ class UnifiedProcessingWindow:
         # Processing complete
         self.processing = False
         self._current_file_index = None
-        self._safe_after(0, lambda: self.run_btn.config(state="normal"))
-        self._safe_after(0, lambda: self.progress_labels["Current File:"].config(text="-"))
+        self._safe_after(0, lambda: self.run_btn.configure(state="normal"))
+        self._safe_after(0, lambda: self.progress_labels["Current File:"].configure(text="-"))
     
     def _update_video_status(self, index: int, status: str):
         """Update video status in table and VideoInfo object."""
@@ -835,7 +883,7 @@ class UnifiedProcessingWindow:
                 self._safe_after(0, lambda idx=current_idx: self._update_video_status(idx, "Pending"))
         self.processing = False
         self._current_file_index = None
-        self._safe_after(0, lambda: self.run_btn.config(state="normal"))
+        self._safe_after(0, lambda: self.run_btn.configure(state="normal"))
         
     def _safe_after(self, delay_ms: int, callback):
         """Safely schedule a callback with after(), tracking it for cleanup."""
@@ -873,6 +921,7 @@ class UnifiedProcessingWindow:
         # Cancel all pending callbacks before destroying
         self._cancel_all_callbacks()
         try:
+            self.running = False
             self.window.destroy()
         except tk.TclError:
             # Window already destroyed

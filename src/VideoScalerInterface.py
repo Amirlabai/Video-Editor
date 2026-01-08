@@ -1,4 +1,4 @@
-from models.ui.Windows import VideoScalerWindow, BatchWindow, JoinWindow
+from models.ui.Windows import JoinWindow
 from models.ui.UnifiedProcessingWindow import UnifiedProcessingWindow
 from models.ConfigManager import get_config_manager
 from tkinter import messagebox
@@ -49,15 +49,45 @@ def root_window():
 
     def scale_video():
         nonlocal window
-        if not window:
-            window = UnifiedProcessingWindow(root, windowBg, buttonBg, activeButtonBg)
-            window.run()
+        # Check if UnifiedProcessingWindow already exists and is running
+        if isinstance(window, UnifiedProcessingWindow):
+            if window.running:
+                # Window already exists and is running, bring it to front
+                try:
+                    window.window.lift()
+                    window.window.focus_force()
+                except:
+                    pass
+                return
+            else:
+                # Window exists but is closed, clean up
+                window = None
+        
+        # Create new window instance
+        window = UnifiedProcessingWindow(root, windowBg, buttonBg, activeButtonBg)
+        window.run()  # This blocks until window is closed
+        window = None  # Clean up after window closes
 
     def join_videos():
         nonlocal window
-        if not window:
-            window = JoinWindow(root, windowBg, buttonBg, activeButtonBg)
-            window.run()
+        # Check if JoinWindow already exists and is running
+        if isinstance(window, JoinWindow):
+            if window.running:
+                # Window already exists and is running, bring it to front
+                try:
+                    window.window.lift()
+                    window.window.focus_force()
+                except:
+                    pass
+                return
+            else:
+                # Window exists but is closed, clean up
+                window = None
+        
+        # Create new window instance
+        window = JoinWindow(root, windowBg, buttonBg, activeButtonBg)
+        window.run()  # This blocks until window is closed
+        window = None  # Clean up after window closes
 
     def show_settings():
         """Show settings/preferences dialog."""
@@ -68,7 +98,7 @@ def root_window():
         settings_window.grab_set()
         
         # Title
-        title_label = ctk.CTkLabel(settings_window, text="⚙️ Settings & Configuration", font=ctk.CTkFont(size=16, weight="bold"))
+        title_label = ctk.CTkLabel(settings_window, text="⚙️ Settings & Configuration", font=ctk.CTkFont(size=18, weight="bold"))
         title_label.pack(pady=10)
         
         # Config file location
@@ -172,7 +202,7 @@ You can manually edit the JSON config file for advanced customization.""")
         print(f"Error setting icon: {e}")
 
     # CustomTkinter window elements
-    categories_label = ctk.CTkLabel(root, text="Video Editor", font=ctk.CTkFont(size=16, weight="bold"))
+    categories_label = ctk.CTkLabel(root, text="Video Editor", font=ctk.CTkFont(size=18, weight="bold"))
     categories_label.pack(pady=5)
 
     button_frame = ctk.CTkFrame(root, fg_color="transparent")
