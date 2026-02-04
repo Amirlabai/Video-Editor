@@ -1,2 +1,6 @@
-**/__pycache__/
+*__pycache__
 /.venv
+output/
+gemini.md
+STATUS.md
+test files/
