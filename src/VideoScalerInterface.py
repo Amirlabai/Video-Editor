@@ -1,6 +1,7 @@
 from models.ui.Windows import JoinWindow
 from models.ui.UnifiedProcessingWindow import UnifiedProcessingWindow
 from models.ConfigManager import get_config_manager
+from _version import __version__
 from tkinter import messagebox
 
 import customtkinter as ctk
@@ -193,7 +194,7 @@ You can manually edit the JSON config file for advanced customization.""")
 
     # Set minimum width and height
     root.minsize(width=300, height=200)
-    root.geometry("600x200+50+50")
+    root.geometry("600x250+50+50")
     root.title("ffmpegMagic")
     try:
         icon_path = resource_path("assets/ffmpegMagic.ico")
@@ -201,11 +202,13 @@ You can manually edit the JSON config file for advanced customization.""")
     except Exception as e:
         print(f"Error setting icon: {e}")
 
+    main_frame = ctk.CTkFrame(root, fg_color="transparent")
+    main_frame.pack(pady=10,fill="both",expand=True)
     # CustomTkinter window elements
-    categories_label = ctk.CTkLabel(root, text="Video Editor", font=ctk.CTkFont(size=18, weight="bold"))
+    categories_label = ctk.CTkLabel(main_frame, text="Video Editor", font=ctk.CTkFont(size=18, weight="bold"))
     categories_label.pack(pady=5)
 
-    button_frame = ctk.CTkFrame(root, fg_color="transparent")
+    button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
     button_frame.pack(pady=(10, 5))
 
     scaleVideo = ctk.CTkButton(button_frame, text="Scale Down A Videos", command=scale_video)
@@ -215,11 +218,11 @@ You can manually edit the JSON config file for advanced customization.""")
     joinVideos.pack(side="left", padx=5)
 
     # Settings button
-    settings_button = ctk.CTkButton(root, text="⚙️ Settings", command=show_settings)
+    settings_button = ctk.CTkButton(main_frame, text="⚙️ Settings", command=show_settings)
     settings_button.pack(pady=5)
 
     # Close button with custom color
-    close_button = ctk.CTkButton(root, 
+    close_button = ctk.CTkButton(main_frame, 
                                 text="Close Program", 
                                 command=close_program,
                                 fg_color=get_rgb((200,30,30)), 
@@ -229,6 +232,10 @@ You can manually edit the JSON config file for advanced customization.""")
     
     root.protocol("WM_DELETE_WINDOW", close_program)
     
+    # Version label
+    version_label = ctk.CTkLabel(root, text=f"v{__version__}", font=ctk.CTkFont(size=10), text_color="gray")
+    version_label.pack(side="bottom", anchor="se", padx=10, pady=5)
+
     root.mainloop()
 
 def main():
