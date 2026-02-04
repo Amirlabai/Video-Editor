@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "video-editor"
-version = "0.1.0"
+version = "1.0.0"
 description = "FFmpeg GUI Wrapper for video processing"
 authors = [
     {name = "Amir Labai", email = "amirlabai@gmail.com"},
