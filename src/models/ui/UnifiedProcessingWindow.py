@@ -16,36 +16,27 @@ from ..VideoInfo import VideoInfo
 from ..VideoProcessor import VideoProcessor
 from ..ConfigManager import get_config_manager
 from ..constants import (
-    DEFAULT_WINDOW_BG, DEFAULT_BUTTON_BG, DEFAULT_ACTIVE_BUTTON_BG,
     CANCEL_BUTTON_BG, CANCEL_BUTTON_ACTIVE_BG,
     SUPPORTED_VIDEO_FORMATS, HD_WIDTH, HD_HEIGHT, FHD_WIDTH, FHD_HEIGHT,
-    UHD_4K_WIDTH, UHD_4K_HEIGHT, DEFAULT_CRF, DEFAULT_PRESET, PRESET_OPTIONS,
+    UHD_4K_WIDTH, UHD_4K_HEIGHT, PRESET_OPTIONS,
     CRF_MIN, CRF_MAX
 )
 
+ctk.set_default_color_theme("assets/custom-theme.json")
 
 class UnifiedProcessingWindow:
     """Unified window for batch video processing with all options."""
     def __init__(
         self,
         root: ctk.CTk,
-        window_bg: str = DEFAULT_WINDOW_BG,
-        button_bg: str = DEFAULT_BUTTON_BG,
-        active_button_bg: str = DEFAULT_ACTIVE_BUTTON_BG
     ):
         """Initialize UnifiedProcessingWindow.
         
         Args:
             root: Root window
-            window_bg: Window background color
-            button_bg: Button background color
-            active_button_bg: Active button background color
         """
         self.FPS_OPTIONS = ["12", "24", "25", "29.97", "30", "50", "60", "120"]
         self.RESOLUTION_OPTIONS = ["HD (1280x720)", "FHD (1920x1080)", "4K (3840x2160)"]
-        self.window_bg = window_bg
-        self.button_bg = button_bg
-        self.active_button_bg = active_button_bg
         self.processor = VideoProcessor()
         self.config = get_config_manager()
         self.videos: List[VideoInfo] = []  # List of VideoInfo instances
@@ -136,15 +127,15 @@ class UnifiedProcessingWindow:
         """Create the UI layout."""
         # Main container with paned window for resizable panels
         # Use tk.PanedWindow as customtkinter doesn't have equivalent
-        main_paned = tk.PanedWindow(self.window, orient=tk.HORIZONTAL, bg=self.window_bg)
+        main_paned = tk.PanedWindow(self.window, orient=tk.HORIZONTAL)
         main_paned.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Left panel - Settings (fill vertically)
-        left_frame = ctk.CTkFrame(main_paned, fg_color=self.window_bg)
+        left_frame = ctk.CTkFrame(main_paned)
         main_paned.add(left_frame, width=400, minsize=350)
         
         # Right panel - Video table, progress, buttons, status
-        right_frame = ctk.CTkFrame(main_paned, fg_color=self.window_bg)
+        right_frame = ctk.CTkFrame(main_paned)
         main_paned.add(right_frame, width=800, minsize=600)
         
         self._create_settings_panel(left_frame)
@@ -153,11 +144,11 @@ class UnifiedProcessingWindow:
     def _create_settings_panel(self, parent):
         """Create the settings panel on the left."""
         # Settings frame
-        settings_frame = ctk.CTkFrame(parent, fg_color=self.window_bg)
+        settings_frame = ctk.CTkFrame(parent)
         settings_frame.pack(fill="both", expand=True)
         
         # Performance Settings
-        perf_frame = ctk.CTkFrame(settings_frame, fg_color=self.window_bg)
+        perf_frame = ctk.CTkFrame(settings_frame)
         perf_frame.pack(fill="x", padx=5, pady=5)
         perf_label = ctk.CTkLabel(perf_frame, text="Performance Settings", 
                                   font=ctk.CTkFont(size=18, weight="bold"))
@@ -183,14 +174,14 @@ class UnifiedProcessingWindow:
         cpu_cap_checkbox.pack(anchor="w", padx=10, pady=5)
         
         # Video Settings
-        video_frame = ctk.CTkFrame(settings_frame, fg_color=self.window_bg)
+        video_frame = ctk.CTkFrame(settings_frame)
         video_frame.pack(fill="x", padx=5, pady=5)
         video_label = ctk.CTkLabel(video_frame, text="Video Settings", 
                                    font=ctk.CTkFont(size=18, weight="bold"))
         video_label.pack(anchor="w", padx=10, pady=(5, 0))
         
         # FPS
-        fps_frame = ctk.CTkFrame(video_frame, fg_color=self.window_bg)
+        fps_frame = ctk.CTkFrame(video_frame)
         fps_frame.pack(fill="x", padx=10, pady=5)
         ctk.CTkLabel(fps_frame, text="Target FPS:").pack(anchor="w")
         self.fps_combo = ctk.CTkComboBox(fps_frame, values=self.FPS_OPTIONS,
@@ -206,7 +197,7 @@ class UnifiedProcessingWindow:
             self.fps_combo.set(self.FPS_OPTIONS[0])
         
         # Resolution
-        res_frame = ctk.CTkFrame(video_frame, fg_color=self.window_bg)
+        res_frame = ctk.CTkFrame(video_frame)
         res_frame.pack(fill="x", padx=10, pady=5)
         ctk.CTkLabel(res_frame, text="Resolution:").pack(anchor="w")
         
@@ -223,14 +214,14 @@ class UnifiedProcessingWindow:
             self.resolution_combo.set(self.RESOLUTION_OPTIONS[0])
         
         # Encoding Settings
-        encoding_frame = ctk.CTkFrame(settings_frame, fg_color=self.window_bg)
+        encoding_frame = ctk.CTkFrame(settings_frame)
         encoding_frame.pack(fill="x", padx=5, pady=5)
         encoding_label = ctk.CTkLabel(encoding_frame, text="Encoding Settings", 
                                       font=ctk.CTkFont(size=18, weight="bold"))
         encoding_label.pack(anchor="w", padx=10, pady=(5, 0))
         
         # CRF
-        crf_frame = ctk.CTkFrame(encoding_frame, fg_color=self.window_bg)
+        crf_frame = ctk.CTkFrame(encoding_frame)
         crf_frame.pack(fill="x", padx=10, pady=5)
         ctk.CTkLabel(crf_frame, text=f"CRF ({CRF_MIN}-{CRF_MAX}, lower=better quality):").pack(anchor="w")
         crf_values = [str(i) for i in range(CRF_MIN, CRF_MAX + 1)]
@@ -247,7 +238,7 @@ class UnifiedProcessingWindow:
             self.crf_combo.set(crf_values[-1])  # Default to last value (30)
         
         # Preset
-        preset_frame = ctk.CTkFrame(encoding_frame, fg_color=self.window_bg)
+        preset_frame = ctk.CTkFrame(encoding_frame)
         preset_frame.pack(fill="x", padx=10, pady=5)
         ctk.CTkLabel(preset_frame, text="Preset:").pack(anchor="w")
         self.preset_combo = ctk.CTkComboBox(preset_frame, values=PRESET_OPTIONS,
@@ -263,16 +254,16 @@ class UnifiedProcessingWindow:
             self.preset_combo.set(PRESET_OPTIONS[0])  # Default to first value
         
         # Output Settings
-        output_frame = ctk.CTkFrame(settings_frame, fg_color=self.window_bg)
+        output_frame = ctk.CTkFrame(settings_frame)
         output_frame.pack(fill="x", padx=5, pady=5)
         output_label = ctk.CTkLabel(output_frame, text="Output Settings", 
                                     font=ctk.CTkFont(size=18, weight="bold"))
         output_label.pack(anchor="w", padx=10, pady=(5, 0))
         
-        output_path_frame = ctk.CTkFrame(output_frame, fg_color=self.window_bg)
+        output_path_frame = ctk.CTkFrame(output_frame)
         output_path_frame.pack(fill="x", padx=10, pady=5)
         ctk.CTkLabel(output_path_frame, text="Output Folder (leave empty to use input folder):").pack(anchor="w")
-        output_path_container = ctk.CTkFrame(output_path_frame, fg_color=self.window_bg)
+        output_path_container = ctk.CTkFrame(output_path_frame)
         output_path_container.pack(fill="x", pady=2)
         
         # Create label for displaying output folder (read-only)
@@ -286,7 +277,7 @@ class UnifiedProcessingWindow:
         ctk.CTkButton(output_path_container, text="Browse", command=self._browse_output_folder,width=80).pack(side="right", padx=2)
         
         # Reset to Defaults Button
-        reset_frame = ctk.CTkFrame(settings_frame, fg_color=self.window_bg)
+        reset_frame = ctk.CTkFrame(settings_frame)
         reset_frame.pack(fill="x", padx=5, pady=10)
         ctk.CTkButton(reset_frame, text="Reset to Default Settings", command=self._reset_to_defaults,
                      font=ctk.CTkFont(weight="bold")).pack(fill="x", padx=5)
@@ -297,7 +288,7 @@ class UnifiedProcessingWindow:
         self._create_video_table(parent)
         
         # Bottom buttons
-        button_frame = ctk.CTkFrame(parent, fg_color=self.window_bg)
+        button_frame = ctk.CTkFrame(parent)
         button_frame.pack(fill="x", padx=5, pady=5)
         
         self.add_files_btn = ctk.CTkButton(
@@ -319,13 +310,13 @@ class UnifiedProcessingWindow:
         self.remove_btn.pack(side="left", padx=5)
         
         # Progress section
-        self.progress_frame = ctk.CTkFrame(parent, fg_color=self.window_bg)
+        self.progress_frame = ctk.CTkFrame(parent)
         self.progress_frame.pack(fill="x", padx=5, pady=5)
         progress_label = ctk.CTkLabel(self.progress_frame, text="Progress", 
                                      font=ctk.CTkFont(size=18, weight="bold"))
         progress_label.pack(anchor="w", padx=5, pady=(5, 0))
         # Create a separate frame for grid layout
-        self.progress_grid_frame = ctk.CTkFrame(self.progress_frame, fg_color=self.window_bg)
+        self.progress_grid_frame = ctk.CTkFrame(self.progress_frame)
         self.progress_grid_frame.pack(fill="x", padx=5, pady=5)
         self.progress_labels = {}
         self._create_progress_labels()
@@ -335,7 +326,7 @@ class UnifiedProcessingWindow:
         self.status_text.pack(fill="both", expand=True, padx=5, pady=5)
         
         # Action buttons
-        action_frame = ctk.CTkFrame(parent, fg_color=self.window_bg)
+        action_frame = ctk.CTkFrame(parent)
         action_frame.pack(fill="x", padx=5, pady=5)
         
         self.run_btn = ctk.CTkButton(
@@ -504,7 +495,7 @@ class UnifiedProcessingWindow:
     
     def _create_video_table(self, parent):
         """Create the video table on the right."""
-        table_frame = ctk.CTkFrame(parent, fg_color=self.window_bg)
+        table_frame = ctk.CTkFrame(parent)
         table_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
         # Table with scrollbar - Keep using ttk.Treeview as customtkinter doesn't have equivalent

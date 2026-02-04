@@ -105,7 +105,8 @@ class VideoProcessor:
             r'Permission denied', r'permission denied',
             r'No such file', r'no such file',
             r'Hardware is lacking', r'hardware is lacking',
-            r'Function not implemented', r'function not implemented'
+            r'Function not implemented', r'function not implemented',
+            r'moov atom not found', r'Invalid data found'
         ]
 
         # Parse FFmpeg's structured progress output
@@ -551,6 +552,16 @@ class VideoProcessor:
             output_text.insert("end", f"\nFFmpeg failed with return code {return_code}: {error_msg}\n")
             if error_list:
                 output_text.insert("end", "\nErrors detected:\n")
+                
+                # Check for specific errors to give hints
+                is_moov_error = any("moov atom not found" in err for err in error_list)
+                is_invalid_data = any("Invalid data found" in err for err in error_list)
+                
+                if is_moov_error:
+                    output_text.insert("end", "  ! HINT: The input file appears to be corrupted or incomplete (moov atom not found).\n")
+                if is_invalid_data:
+                    output_text.insert("end", "  ! HINT: The input file contains invalid data. It might not be a valid video file.\n")
+                    
                 for error in error_list:
                     output_text.insert("end", f"  - {error}\n")
         

@@ -130,6 +130,31 @@ class TestFFmpegCommandBuilder(unittest.TestCase):
         self.assertIn("-progress", cmd_gpu)
         self.assertIn("pipe:1", cmd_gpu)
 
+    def test_build_scale_command_gpu_non_nvenc_codec(self):
+        """Test GPU command with non-nvenc codec uses standard scale filter."""
+        cmd = FFmpegCommandBuilder.build_scale_command_gpu(
+            "input.mp4", "output.mp4",
+            video_codec="hevc_amf"  # AMD GPU codec
+        )
+        
+        # Should use 'scale' not 'scale_cuda'
+        self.assertTrue(any("scale=" in str(arg) for arg in cmd))
+        self.assertFalse(any("scale_cuda" in str(arg) for arg in cmd))
+
+    def test_build_scale_command_with_fps(self):
+        """Test that FPS filter is correctly applied."""
+        # Test CPU
+        cmd_cpu = FFmpegCommandBuilder.build_scale_command_cpu(
+            "input.mp4", "output.mp4", fps=30.0
+        )
+        self.assertTrue(any("fps=30.0" in str(arg) for arg in cmd_cpu))
+        
+        # Test GPU
+        cmd_gpu = FFmpegCommandBuilder.build_scale_command_gpu(
+            "input.mp4", "output.mp4", fps=60.0
+        )
+        self.assertTrue(any("fps=60.0" in str(arg) for arg in cmd_gpu))
+
 
 if __name__ == '__main__':
     unittest.main()

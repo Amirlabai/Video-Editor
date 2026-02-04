@@ -64,7 +64,7 @@ def root_window():
                 window = None
         
         # Create new window instance
-        window = UnifiedProcessingWindow(root, windowBg, buttonBg, activeButtonBg)
+        window = UnifiedProcessingWindow(root)
         window.run()  # This blocks until window is closed
         window = None  # Clean up after window closes
 
@@ -85,7 +85,7 @@ def root_window():
                 window = None
         
         # Create new window instance
-        window = JoinWindow(root, windowBg, buttonBg, activeButtonBg)
+        window = JoinWindow(root)
         window.run()  # This blocks until window is closed
         window = None  # Clean up after window closes
 
