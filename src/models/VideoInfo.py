@@ -297,6 +297,21 @@ class VideoInfo:
         self.target_height = height
         self.is_vertical = is_vertical
         self.orientation = "_vertical" if is_vertical else "_horizontal"
+
+    def toggle_orientation(self) -> str:
+        """Toggle orientation between horizontal and vertical.
+        
+        Returns:
+            New orientation string ("Horizontal" or "Vertical")
+        """
+        self.is_vertical = not self.is_vertical
+        self.orientation = "_vertical" if self.is_vertical else "_horizontal"
+        
+        # Swap target dimensions if they exist
+        if self.target_width and self.target_height:
+            self.target_width, self.target_height = self.target_height, self.target_width
+            
+        return "Vertical" if self.is_vertical else "Horizontal"
     
     def get_target_resolution(self) -> Tuple[Optional[int], Optional[int]]:
         """Get target resolution.

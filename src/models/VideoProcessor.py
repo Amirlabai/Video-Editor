@@ -278,6 +278,20 @@ class VideoProcessor:
         
         if input_fps:
             self._input_fps = input_fps
+            
+        # Log resolution info
+        try:
+            from .VideoInfo import VideoInfo
+            # Ensure we have width/height
+            vi = VideoInfo(input_file)
+            input_w, input_h = vi.get_fps_and_size()[1:] if vi.get_fps_and_size() else ("?", "?")
+            root.after(0, lambda st=status_text: st.insert("end", f"Resolution: {input_w}x{input_h} -> {xaxis}x{yaxis}\n") if st.winfo_exists() else None)
+            
+            # Log extra info
+            codec = vi.codec if vi.codec else "Unknown"
+            root.after(0, lambda st=status_text: st.insert("end", f"Input Codec: {codec}\nSettings: CRF={crf}, Preset={preset}\n") if st.winfo_exists() else None)
+        except Exception as e:
+            logger.warning(f"Could not log resolution: {e}")
         
         # Build FFmpeg command
         ffmpeg_cmd = FFmpegCommandBuilder.build_scale_command_cpu(
@@ -287,13 +301,20 @@ class VideoProcessor:
         error_list: List[str] = []
         
         try:
+            # Prevent console window from appearing on Windows
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
             process = subprocess.Popen(
                 ffmpeg_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 encoding="utf-8",
-                errors="replace"
+                errors="replace",
+                startupinfo=startupinfo
             )
             self._current_process = process
 
@@ -391,6 +412,20 @@ class VideoProcessor:
         
         if input_fps:
             self._input_fps = input_fps
+            
+        # Log resolution info
+        try:
+            from .VideoInfo import VideoInfo
+            # Ensure we have width/height
+            vi = VideoInfo(input_file)
+            input_w, input_h = vi.get_fps_and_size()[1:] if vi.get_fps_and_size() else ("?", "?")
+            root.after(0, lambda st=status_text: st.insert("end", f"Resolution: {input_w}x{input_h} -> {xaxis}x{yaxis}\n") if st.winfo_exists() else None)
+            
+            # Log extra info
+            codec = vi.codec if vi.codec else "Unknown"
+            root.after(0, lambda st=status_text: st.insert("end", f"Input Codec: {codec}\nSettings: CRF={crf}, Preset={preset}\n") if st.winfo_exists() else None)
+        except Exception as e:
+            logger.warning(f"Could not log resolution: {e}")
         
         # Build FFmpeg command
         ffmpeg_cmd = FFmpegCommandBuilder.build_scale_command_gpu(
@@ -400,13 +435,20 @@ class VideoProcessor:
         error_list: List[str] = []
         
         try:
+            # Prevent console window from appearing on Windows
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
             process = subprocess.Popen(
                 ffmpeg_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 encoding="utf-8",
-                errors="replace"
+                errors="replace",
+                startupinfo=startupinfo
             )
             self._current_process = process
 
@@ -538,6 +580,7 @@ class VideoProcessor:
                         output_text.insert("end", f"  Increase: {VideoProcessor.format_file_size(abs(size_reduction))} ({abs(reduction_percent):.1f}% larger)\n")
                     else:
                         output_text.insert("end", f"  No size change\n")
+                    output_text.insert("end", f"\n")
                 except Exception as e:
                     logger.warning(f"Could not get file sizes: {e}")
             

@@ -504,7 +504,7 @@ class UnifiedProcessingWindow:
         
         self.video_tree = ttk.Treeview(
             table_frame,
-            columns=("File", "Resolution", "FPS", "Size", "Status"),
+            columns=("File", "Resolution", "FPS", "Codec", "Duration", "Size", "Orientation", "Status"),
             show="headings",
             yscrollcommand=scrollbar.set,
             selectmode="extended"
@@ -515,14 +515,23 @@ class UnifiedProcessingWindow:
         self.video_tree.heading("File", text="File Name")
         self.video_tree.heading("Resolution", text="Resolution")
         self.video_tree.heading("FPS", text="FPS")
+        self.video_tree.heading("Codec", text="Codec")
+        self.video_tree.heading("Duration", text="Duration")
         self.video_tree.heading("Size", text="Size")
+        self.video_tree.heading("Orientation", text="Orientation")
         self.video_tree.heading("Status", text="Status")
         
         self.video_tree.column("File", width=200)
         self.video_tree.column("Resolution", width=120)
-        self.video_tree.column("FPS", width=80)
-        self.video_tree.column("Size", width=100)
+        self.video_tree.column("FPS", width=60)
+        self.video_tree.column("Codec", width=80)
+        self.video_tree.column("Duration", width=80)
+        self.video_tree.column("Size", width=80)
+        self.video_tree.column("Orientation", width=80)
         self.video_tree.column("Status", width=100)
+        
+        # Bind double click for orientation toggle
+        self.video_tree.bind("<Double-1>", self._on_tree_double_click)
         
         self.video_tree.pack(fill="both", expand=True)
     
@@ -559,7 +568,8 @@ class UnifiedProcessingWindow:
         files = filedialog.askopenfilenames(
             title="Select Video Files",
             filetypes=[("Video Files", "*.mp4;*.mkv;*.avi;*.mov;*.flv;*.wmv")],
-            initialdir=last_input_folder if last_input_folder and os.path.exists(last_input_folder) else None
+            initialdir=last_input_folder if last_input_folder and os.path.exists(last_input_folder) else None,
+            parent=self.window
         )
         
         if files:
@@ -572,7 +582,8 @@ class UnifiedProcessingWindow:
         last_input_folder = self.config.get_last_input_folder()
         folder = filedialog.askdirectory(
             title="Select Folder Containing Videos",
-            initialdir=last_input_folder if last_input_folder and os.path.exists(last_input_folder) else None
+            initialdir=last_input_folder if last_input_folder and os.path.exists(last_input_folder) else None,
+            parent=self.window
         )
         
         if folder:
@@ -581,6 +592,32 @@ class UnifiedProcessingWindow:
                           if f.lower().endswith(SUPPORTED_VIDEO_FORMATS)]
             for video_file in video_files:
                 self._add_video(os.path.join(folder, video_file))
+    
+    def _on_tree_double_click(self, event):
+        """Handle double click on treeview."""
+        region = self.video_tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+            
+        column = self.video_tree.identify_column(event.x)
+        row_id = self.video_tree.identify_row(event.y)
+        
+        if not row_id:
+            return
+            
+        # Orientation is column 7 (#7)
+        if column == "#7":
+            # Find video info index
+            index = self.video_tree.index(row_id)
+            if 0 <= index < len(self.videos):
+                video_info = self.videos[index]
+                # Toggle orientation
+                new_orientation = video_info.toggle_orientation()
+                
+                # Update UI
+                values = list(self.video_tree.item(row_id, "values"))
+                values[6] = new_orientation # Index 6 is 0-based for 7th column
+                self.video_tree.item(row_id, values=values)
     
     def _add_video(self, file_path: str):
         """Add a single video to the list."""
@@ -598,12 +635,23 @@ class UnifiedProcessingWindow:
             # Insert into table
             resolution = f"{video_info.width}x{video_info.height}" if video_info.width and video_info.height else "Unknown"
             fps_str = f"{video_info.fps:.2f}" if video_info.fps else "Unknown"
+            codec = video_info.codec if video_info.codec else "Unknown"
+            
+            # Format duration
+            duration_str = "Unknown"
+            duration = video_info.get_duration()
+            if duration:
+                mins, secs = divmod(int(duration), 60)
+                duration_str = f"{mins}:{secs:02d}"
             
             self.video_tree.insert("", "end", values=(
                 os.path.basename(file_path),
                 resolution,
                 fps_str,
+                codec,
+                duration_str,
                 size_str,
+                "Vertical" if video_info.is_vertical else "Horizontal",
                 video_info.status_done
             ))
             
@@ -634,7 +682,8 @@ class UnifiedProcessingWindow:
         last_output_folder = self.config.get_last_output_folder()
         folder = filedialog.askdirectory(
             title="Select Output Folder",
-            initialdir=last_output_folder if last_output_folder and os.path.exists(last_output_folder) else None
+            initialdir=last_output_folder if last_output_folder and os.path.exists(last_output_folder) else None,
+            parent=self.window
         )
         if folder:
             display_text = self._turncate_folder_name(folder)
@@ -756,19 +805,21 @@ class UnifiedProcessingWindow:
     
     def _process_queue(self, threads: int):
         """Process videos from queue one by one."""
-        # Count only pending files (skip completed ones)
+        # Count only pending files for current batch
         pending_files = [v for v in self.videos if v.status_done == "Pending"]
-        total_files = len(pending_files)
-        completed_files = sum(1 for v in self.videos if v.status_done == "Completed")
+        total_batch_files = len(pending_files)
         
-        if total_files == 0:
+        if total_batch_files == 0:
             self._safe_after(0, lambda: messagebox.showinfo("No Files to Process", "All files are already completed."))
             self.processing = False
             self._safe_after(0, lambda: self.run_btn.configure(state="normal"))
             return
         
-        self._safe_after(0, lambda: self.progress_labels["Total Files:"].configure(text=str(total_files + completed_files)))
-        self._safe_after(0, lambda c=completed_files: self.progress_labels["Files Processed:"].configure(text=f"{c}/{total_files + completed_files}"))
+        # Reset progress display for this batch
+        self._safe_after(0, lambda: self.progress_labels["Total Files:"].configure(text=str(total_batch_files)))
+        self._safe_after(0, lambda: self.progress_labels["Files Processed:"].configure(text=f"0/{total_batch_files}"))
+        
+        processed_count = 0
         
         # Process each file in the queue
         for index, video_info in enumerate(self.videos):
@@ -835,10 +886,10 @@ class UnifiedProcessingWindow:
                 if not self.processor._cancel_requested:
                     video_info.status_done = "Completed"
                     self._safe_after(0, lambda idx=index: self._update_video_status(idx, "Completed"))
-                    # Update progress count
-                    completed_count = sum(1 for v in self.videos if v.status_done == "Completed")
-                    total_count = len(self.videos)
-                    self._safe_after(0, lambda c=completed_count, t=total_count: 
+                    
+                    # Update progress count for this batch
+                    processed_count += 1
+                    self._safe_after(0, lambda c=processed_count, t=total_batch_files: 
                                    self.progress_labels["Files Processed:"].configure(text=f"{c}/{t}"))
             except Exception as e:
                 # Update status to Error
@@ -859,7 +910,7 @@ class UnifiedProcessingWindow:
         if 0 <= index < len(items) and 0 <= index < len(self.videos):
             item = items[index]
             values = list(self.video_tree.item(item, "values"))
-            values[4] = status
+            values[7] = status
             self.video_tree.item(item, values=values)
             # Also update the VideoInfo object
             self.videos[index].status_done = status
@@ -920,7 +971,20 @@ class UnifiedProcessingWindow:
     
     def run(self):
         """Run the window mainloop."""
-        self.window.mainloop()
+        # Force main window (launcher) to background
+        try:
+            self.window.master.lower()
+        except (AttributeError, tk.TclError):
+            pass
+            
+        # Force window to top and focus
+        self.window.lift()
+        self.window.focus_force()
+        self.window.grab_set() 
+        
+        # Use wait_window to block execution until window is closed,
+        # instead of starting a nested mainloop which can cause issues.
+        self.window.wait_window()
 
     def close(self):
         """Close the window."""
