@@ -2,5 +2,7 @@
 /.venv
 output/
 gemini.md
-STATUS.md
+status.md
 test files/
+.incoming/
+.agents/

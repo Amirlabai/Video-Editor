@@ -7,6 +7,7 @@ import subprocess
 import time
 import re
 import logging
+import tkinter as tk
 from typing import List, Optional
 from pathlib import Path
 from tkinter import messagebox
@@ -73,8 +74,8 @@ class VideoJoiner:
         concat_file: str,
         output_file: str,
         total_files: int,
-        output_text,
-        root
+        output_text: Optional[tk.Text] = None,
+        root: Optional[tk.Tk] = None
     ) -> None:
         """Join videos using FFmpeg concat demuxer.
         
@@ -101,12 +102,15 @@ class VideoJoiner:
             )
             self._current_process = process
 
-            output_text.insert("end", "\nStarting FFmpeg to join videos...\n")
-            output_text.see("end")
+            if output_text:
+                output_text.insert("end", "\nStarting FFmpeg to join videos...\n")
+                output_text.see("end")
 
-            progress_line_index = output_text.index("end")
-            output_text.insert("end", f"[0/{total_files}] Progress: Starting...\n")
-            output_text.see("end")
+                progress_line_index = output_text.index("end")
+                output_text.insert("end", f"[0/{total_files}] Progress: Starting...\n")
+                output_text.see("end")
+            else:
+                print("\nStarting FFmpeg to join videos...")
 
             start_time = time.perf_counter()
             avg_time_diff = [0] * 10
@@ -120,21 +124,28 @@ class VideoJoiner:
                         process.wait(timeout=PROCESS_TERMINATION_TIMEOUT)
                     except subprocess.TimeoutExpired:
                         process.kill()
-                    output_text.insert("end", "\nOperation cancelled by user\n")
-                    output_text.see("end")
+                    if output_text and root:
+                        output_text.insert("end", "\nOperation cancelled by user\n")
+                        output_text.see("end")
+                    else:
+                        print("\nOperation cancelled by user")
                     self._current_process = None
                     # Clean up partial output file
                     if os.path.exists(output_file):
                         try:
                             os.remove(output_file)
-                            output_text.insert("end", f"\nPartial output file removed.\n")
+                            if output_text:
+                                output_text.insert("end", f"\nPartial output file removed.\n")
+                            else:
+                                print("\nPartial output file removed.")
                         except Exception:
                             pass
                     # Close window after showing cancellation message
-                    root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
-                        messagebox.showinfo("Cancelled", "Operation was cancelled."),
-                        root.destroy()
-                    ))
+                    if root:
+                        root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
+                            messagebox.showinfo("Cancelled", "Operation was cancelled."),
+                            root.destroy()
+                        ))
                     return
                 
                 match = re.search(r"frame=\s*(\d+)", line)
@@ -148,9 +159,13 @@ class VideoJoiner:
                     i = (i + 1) % 10
 
                     progress_message = f"[~/{total_files}] Progress: {percentage:.2f}% elapsed."
-                    output_text.delete(progress_line_index, f"{progress_line_index} lineend")
-                    output_text.insert(progress_line_index, progress_message)
-                    output_text.see("end")
+                    if output_text:
+                        output_text.delete(progress_line_index, f"{progress_line_index} lineend")
+                        output_text.insert(progress_line_index, progress_message)
+                        output_text.see("end")
+                    else:
+                        if int(percentage) % 10 == 0:
+                            print(progress_message)
 
             process.wait()
             self._current_process = None
@@ -159,15 +174,23 @@ class VideoJoiner:
                 return
 
             if process.returncode == 0:
-                output_text.insert("end", f"\nSuccessfully joined videos into: {output_file}\n")
+                if output_text:
+                    output_text.insert("end", f"\nSuccessfully joined videos into: {output_file}\n")
+                    output_text.see("end")
+                else:
+                    print(f"\nSuccessfully joined videos into: {output_file}")
             else:
-                output_text.insert("end", "\nFFmpeg failed! Check the output above for details.\n")
+                if output_text:
+                    output_text.insert("end", "\nFFmpeg failed! Check the output above for details.\n")
+                    output_text.see("end")
+                else:
+                    print("\nFFmpeg failed!")
 
-            output_text.see("end")
-            root.after(1000, lambda: (
-                messagebox.showinfo("Done", "All videos have been joined!"),
-                root.destroy()
-            ))
+            if root:
+                root.after(1000, lambda: (
+                    messagebox.showinfo("Done", "All videos have been joined!"),
+                    root.destroy()
+                ))
 
         except FileNotFoundError:
             self._current_process = None
@@ -176,8 +199,11 @@ class VideoJoiner:
             )
         except Exception as e:
             self._current_process = None
-            output_text.insert("end", f"\nError: {str(e)}\n")
-            output_text.see("end")
+            if output_text:
+                output_text.insert("end", f"\nError: {str(e)}\n")
+                output_text.see("end")
+            else:
+                print(f"\nError: {str(e)}")
     
     def get_video_files(self, folder_path: str) -> List[str]:
         """Get list of video files from a folder.

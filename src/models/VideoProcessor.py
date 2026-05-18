@@ -46,12 +46,12 @@ class VideoProcessor:
     def _process_ffmpeg_output(
         self,
         process: subprocess.Popen,
-        progress_labels: Optional[dict],
-        status_text,
-        total_frames: Optional[int],
-        error_list: List[str],
-        input_file: str,
-        root=None,
+        progress_labels: Optional[dict] = None,
+        status_text: Optional[tk.Text] = None,
+        total_frames: Optional[int] = None,
+        error_list: List[str] = [],
+        input_file: str = "",
+        root: Optional[tk.Tk] = None,
         target_fps: Optional[float] = None,
         input_duration: Optional[float] = None
     ) -> Tuple[int, List[str]]:
@@ -126,6 +126,8 @@ class VideoProcessor:
                         root.after(0, lambda st=status_text: (st.insert("end", "\nOperation cancelled by user\n"), st.see("end")) if st.winfo_exists() else None)
                     except:
                         pass  # Widget may have been destroyed
+                else:
+                    print("\nOperation cancelled by user")
                 return -1, error_list
             
             # Check for error patterns (in stderr lines that may be mixed in)
@@ -216,6 +218,10 @@ class VideoProcessor:
                         except:
                             pass  # Widget may have been destroyed
                     root.after(0, update_progress)
+                else:
+                    # Console progress logging
+                    if int(percent) % 5 == 0: # Log every 5%
+                        print(f"Progress: {percent:.2f}% | FPS: {encoding_fps:.1f} | Rem: {hours:02}:{minutes:02}:{seconds:02}")
                 
                 # Reset progress_data for next update block
                 if progress_data.get('progress') == 'end':
@@ -230,10 +236,10 @@ class VideoProcessor:
         self,
         input_file: str,
         output_file: str,
-        total_frames: Optional[int],
-        progress_labels: Optional[dict],
-        status_text,
-        root,
+        total_frames: Optional[int] = None,
+        progress_labels: Optional[dict] = None,
+        status_text: Optional[tk.Text] = None,
+        root: Optional[tk.Tk] = None,
         ratio: bool = False,
         xaxis: str = str(HD_WIDTH),
         yaxis: str = str(HD_HEIGHT),
@@ -241,7 +247,7 @@ class VideoProcessor:
         preset: str = DEFAULT_PRESET,
         threads: int = 0,
         fps: Optional[float] = None,
-        close_window: bool = True,
+        close_window: bool = False,
         input_duration: Optional[float] = None,
         input_fps: Optional[float] = None
     ) -> None:
@@ -319,7 +325,10 @@ class VideoProcessor:
             self._current_process = process
 
             threading_info = f" with {threads} threads" if threads > 0 else " (auto threading)"
-            root.after(0, lambda st=status_text, info=threading_info: (st.insert("end", f"Starting FFmpeg{info}...\n"), st.see("end")) if st.winfo_exists() else None)
+            if status_text and root:
+                root.after(0, lambda st=status_text, info=threading_info: (st.insert("end", f"Starting FFmpeg{info}...\n"), st.see("end")) if st.winfo_exists() else None)
+            else:
+                print(f"Starting FFmpeg{threading_info}...")
 
             # Process FFmpeg output and track progress
             return_code, error_list = self._process_ffmpeg_output(
@@ -360,23 +369,26 @@ class VideoProcessor:
             self._current_process = None
             logger.error(f"Error during CPU encoding: {e}")
             error_msg = str(e)  # Capture error message for lambda
-            root.after(0, lambda msg=error_msg: (status_text.insert("end", f"\nError: {msg}\n"), status_text.see("end")) if status_text.winfo_exists() else None)
+            if status_text and root:
+                root.after(0, lambda msg=error_msg: (status_text.insert("end", f"\nError: {msg}\n"), status_text.see("end")) if status_text.winfo_exists() else None)
+            else:
+                print(f"\nError: {error_msg}")
     
     def scale_video_gpu(
         self,
         input_file: str,
         output_file: str,
-        total_frames: Optional[int],
-        progress_labels: Optional[dict],
-        status_text,
-        root,
+        total_frames: Optional[int] = None,
+        progress_labels: Optional[dict] = None,
+        status_text: Optional[tk.Text] = None,
+        root: Optional[tk.Tk] = None,
         ratio: bool = False,
         xaxis: str = str(HD_WIDTH),
         yaxis: str = str(HD_HEIGHT),
         crf: str = DEFAULT_CRF,
         preset: str = DEFAULT_PRESET,
         fps: Optional[float] = None,
-        close_window: bool = True,
+        close_window: bool = False,
         input_duration: Optional[float] = None,
         input_fps: Optional[float] = None
     ) -> None:
@@ -419,11 +431,17 @@ class VideoProcessor:
             # Ensure we have width/height
             vi = VideoInfo(input_file)
             input_w, input_h = vi.get_fps_and_size()[1:] if vi.get_fps_and_size() else ("?", "?")
-            root.after(0, lambda st=status_text: st.insert("end", f"Resolution: {input_w}x{input_h} -> {xaxis}x{yaxis}\n") if st.winfo_exists() else None)
+            if status_text and root:
+                root.after(0, lambda st=status_text: st.insert("end", f"Resolution: {input_w}x{input_h} -> {xaxis}x{yaxis}\n") if st.winfo_exists() else None)
+            else:
+                print(f"Resolution: {input_w}x{input_h} -> {xaxis}x{yaxis}")
             
             # Log extra info
             codec = vi.codec if vi.codec else "Unknown"
-            root.after(0, lambda st=status_text: st.insert("end", f"Input Codec: {codec}\nSettings: CRF={crf}, Preset={preset}\n") if st.winfo_exists() else None)
+            if status_text and root:
+                root.after(0, lambda st=status_text: st.insert("end", f"Input Codec: {codec}\nSettings: CRF={crf}, Preset={preset}\n") if st.winfo_exists() else None)
+            else:
+                print(f"Input Codec: {codec}\nSettings: CRF={crf}, Preset={preset}")
         except Exception as e:
             logger.warning(f"Could not log resolution: {e}")
         
@@ -452,7 +470,10 @@ class VideoProcessor:
             )
             self._current_process = process
 
-            root.after(0, lambda st=status_text: (st.insert("end", "Starting FFmpeg with GPU acceleration (NVENC)...\n"), st.see("end")) if st.winfo_exists() else None)
+            if status_text and root:
+                root.after(0, lambda st=status_text: (st.insert("end", "Starting FFmpeg with GPU acceleration (NVENC)...\n"), st.see("end")) if st.winfo_exists() else None)
+            else:
+                print("Starting FFmpeg with GPU acceleration (NVENC)...")
 
             # Process FFmpeg output and track progress
             return_code, error_list = self._process_ffmpeg_output(
@@ -491,7 +512,10 @@ class VideoProcessor:
             if nvenc_dll_error:
                 # GPU error - fallback to CPU
                 logger.warning("NVENC DLL error detected, falling back to CPU encoding")
-                root.after(0, lambda st=status_text: (st.insert("end", "\nGPU encoding failed, falling back to CPU...\n"), st.see("end")) if st.winfo_exists() else None)
+                if status_text and root:
+                    root.after(0, lambda st=status_text: (st.insert("end", "\nGPU encoding failed, falling back to CPU...\n"), st.see("end")) if st.winfo_exists() else None)
+                else:
+                    print("\nGPU encoding failed, falling back to CPU...")
                 # Remove failed GPU output and retry with CPU
                 if os.path.exists(output_file):
                     try:
@@ -541,10 +565,10 @@ class VideoProcessor:
         return_code: int,
         error_list: List[str],
         output_file: str,
-        output_text,
-        root,
+        output_text: Optional[tk.Text] = None,
+        root: Optional[tk.Tk] = None,
         input_file: Optional[str] = None,
-        close_window: bool = True
+        close_window: bool = False
     ) -> None:
         """Handle the result of a video processing operation.
         
@@ -561,7 +585,10 @@ class VideoProcessor:
         from .constants import SUCCESS_MESSAGE_DELAY
         
         if return_code == 0:
-            output_text.insert("end", f"\nSuccessfully processed: {output_file}\n")
+            if output_text:
+                output_text.insert("end", f"\nSuccessfully processed: {output_file}\n")
+            else:
+                print(f"\nSuccessfully processed: {output_file}")
             
             # Show file size comparison if input file is provided
             if input_file and os.path.exists(input_file) and os.path.exists(output_file):
@@ -571,28 +598,47 @@ class VideoProcessor:
                     size_reduction = input_size - output_size
                     reduction_percent = (size_reduction / input_size * 100) if input_size > 0 else 0
                     
-                    output_text.insert("end", f"\nFile Size Comparison:\n")
-                    output_text.insert("end", f"  Input:  {VideoProcessor.format_file_size(input_size)}\n")
-                    output_text.insert("end", f"  Output: {VideoProcessor.format_file_size(output_size)}\n")
-                    if reduction_percent > 0:
-                        output_text.insert("end", f"  Reduction: {VideoProcessor.format_file_size(size_reduction)} ({reduction_percent:.1f}% smaller)\n")
-                    elif reduction_percent < 0:
-                        output_text.insert("end", f"  Increase: {VideoProcessor.format_file_size(abs(size_reduction))} ({abs(reduction_percent):.1f}% larger)\n")
+                    if output_text:
+                        output_text.insert("end", f"\nFile Size Comparison:\n")
+                        output_text.insert("end", f"  Input:  {VideoProcessor.format_file_size(input_size)}\n")
+                        output_text.insert("end", f"  Output: {VideoProcessor.format_file_size(output_size)}\n")
+                        if reduction_percent > 0:
+                            output_text.insert("end", f"  Reduction: {VideoProcessor.format_file_size(size_reduction)} ({reduction_percent:.1f}% smaller)\n")
+                        elif reduction_percent < 0:
+                            output_text.insert("end", f"  Increase: {VideoProcessor.format_file_size(abs(size_reduction))} ({abs(reduction_percent):.1f}% larger)\n")
+                        else:
+                            output_text.insert("end", f"  No size change\n")
+                        output_text.insert("end", f"\n")
                     else:
-                        output_text.insert("end", f"  No size change\n")
-                    output_text.insert("end", f"\n")
+                        print(f"\nFile Size Comparison:")
+                        print(f"  Input:  {VideoProcessor.format_file_size(input_size)}")
+                        print(f"  Output: {VideoProcessor.format_file_size(output_size)}")
+                        if reduction_percent > 0:
+                            print(f"  Reduction: {VideoProcessor.format_file_size(size_reduction)} ({reduction_percent:.1f}% smaller)")
+                        elif reduction_percent < 0:
+                            print(f"  Increase: {VideoProcessor.format_file_size(abs(size_reduction))} ({abs(reduction_percent):.1f}% larger)")
+                        else:
+                            print(f"  No size change")
                 except Exception as e:
                     logger.warning(f"Could not get file sizes: {e}")
             
             if error_list:
-                output_text.insert("end", f"\nWarnings detected: {len(error_list)} warning(s)\n")
-                for error in error_list[:5]:  # Show first 5 errors
-                    output_text.insert("end", f"  - {error}\n")
-                if len(error_list) > 5:
-                    output_text.insert("end", f"  ... and {len(error_list) - 5} more\n")
+                if output_text:
+                    output_text.insert("end", f"\nWarnings detected: {len(error_list)} warning(s)\n")
+                    for error in error_list[:5]:  # Show first 5 errors
+                        output_text.insert("end", f"  - {error}\n")
+                    if len(error_list) > 5:
+                        output_text.insert("end", f"  ... and {len(error_list) - 5} more\n")
+                else:
+                    print(f"\nWarnings detected: {len(error_list)} warning(s)")
+                    for error in error_list[:5]:
+                        print(f"  - {error}")
         else:
             error_msg = self._get_ffmpeg_error_code(return_code)
-            output_text.insert("end", f"\nFFmpeg failed with return code {return_code}: {error_msg}\n")
+            if output_text:
+                output_text.insert("end", f"\nFFmpeg failed with return code {return_code}: {error_msg}\n")
+            else:
+                print(f"\nFFmpeg failed with return code {return_code}: {error_msg}")
             if error_list:
                 output_text.insert("end", "\nErrors detected:\n")
                 
@@ -608,8 +654,10 @@ class VideoProcessor:
                 for error in error_list:
                     output_text.insert("end", f"  - {error}\n")
         
-        output_text.see("end")
-        if close_window:
+        if output_text:
+            output_text.see("end")
+        
+        if close_window and root:
             root.after(SUCCESS_MESSAGE_DELAY, lambda: (
                 messagebox.showinfo("Done", "Video processing completed!"),
                 root.destroy()
