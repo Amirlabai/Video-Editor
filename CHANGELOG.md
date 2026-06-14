@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-06-14)
+
+### Features
+
+- **gui**: Replace tkinter with pywebview GUI
+  ([`99f0a03`](https://github.com/Amirlabai/Video-Editor/commit/99f0a030d8b15bd43864fe5b0261ebdd6277034a))
+
+
 ## v1.1.0 (2026-05-18)
 
 ### Features
