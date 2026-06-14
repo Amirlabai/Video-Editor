@@ -2,6 +2,7 @@
 PyWebView API bridge for ffmpegMagic.
 """
 
+import functools
 import json
 import logging
 import multiprocessing
@@ -32,6 +33,75 @@ from utils.ffmpeg_paths import check_ffmpeg_available, get_ffmpeg_exe, get_ffmpe
 
 logger = logging.getLogger(__name__)
 
+_UI_LOG_SKIP = frozenset({"set_window", "compress_get_status"})
+
+
+def _looks_like_path(value: str) -> bool:
+    if len(value) <= 1:
+        return False
+    if value[0] in "/\\":
+        return True
+    if len(value) >= 3 and value[1] == ":" and value[2] in "/\\":
+        return True
+    return False
+
+
+def _format_ui_arg(value: Any) -> str:
+    if value is None or isinstance(value, (bool, int, float)):
+        return str(value)
+    if isinstance(value, str):
+        if _looks_like_path(value):
+            return os.path.basename(value) or value
+        if len(value) > 80:
+            return value[:77] + "..."
+        return value
+    if isinstance(value, list):
+        if not value:
+            return "[]"
+        if all(isinstance(x, str) for x in value):
+            names = [os.path.basename(x) if _looks_like_path(x) else x for x in value[:5]]
+            extra = f" +{len(value) - 5} more" if len(value) > 5 else ""
+            return f"[{', '.join(names)}{extra}]"
+        return f"[{len(value)} items]"
+    if isinstance(value, dict):
+        keys = list(value.keys())[:6]
+        suffix = "..." if len(value) > 6 else ""
+        return "{" + ", ".join(keys) + suffix + "}"
+    text = repr(value)
+    return text[:80] + ("..." if len(text) > 80 else "")
+
+
+def _format_ui_args(args: tuple, kwargs: dict) -> str:
+    parts = [_format_ui_arg(a) for a in args]
+    parts.extend(f"{k}={_format_ui_arg(v)}" for k, v in kwargs.items())
+    return ", ".join(parts)
+
+
+def _wrap_ui_logging(cls):
+    """Wrap public methods on cls and its bases (MRO order, first definition wins)."""
+    wrapped: set[str] = set()
+    for base in cls.__mro__:
+        if base is object:
+            continue
+        for name, attr in base.__dict__.items():
+            if name in wrapped or name.startswith("_") or name in _UI_LOG_SKIP or not callable(attr):
+                continue
+            wrapped.add(name)
+
+            @functools.wraps(attr)
+            def wrapper(self, *args, _method=attr, **kwargs):
+                try:
+                    detail = _format_ui_args(args, kwargs)
+                    logger.info("UI %s(%s)", _method.__name__, detail)
+                except Exception:
+                    logger.debug("UI log format failed for %s", _method.__name__, exc_info=True)
+                    logger.info("UI %s()", _method.__name__)
+                return _method(self, *args, **kwargs)
+
+            setattr(cls, name, wrapper)
+    return cls
+
+
 FPS_OPTIONS = ["12", "24", "25", "29.97", "30", "50", "60", "120"]
 RESOLUTION_OPTIONS = ["HD (1280x720)", "FHD (1920x1080)", "4K (3840x2160)"]
 RESOLUTION_MAP = {
@@ -40,6 +110,21 @@ RESOLUTION_MAP = {
     "4K (3840x2160)": ("4K", str(UHD_4K_WIDTH), str(UHD_4K_HEIGHT)),
 }
 CRF_OPTIONS = [str(i) for i in range(CRF_MIN, CRF_MAX + 1)]
+
+
+def _build_file_types(extensions: str) -> tuple[str, ...]:
+    """pywebview filter strings: 'Label (*.ext;*.ext2)'. Empty input -> () (no filter, all files)."""
+    ext_list = [e.strip() for e in extensions.split(";") if e.strip()]
+    if not ext_list:
+        return tuple()
+    return (f"Videos ({';'.join(ext_list)})",)
+
+
+def _normalize_dialog_dir(initial_dir: str) -> str:
+    path = (initial_dir or "").strip()
+    if path and os.path.isdir(path):
+        return path
+    return ""
 
 
 class BridgeProgressReporter:
@@ -69,6 +154,7 @@ class BridgeProgressReporter:
         self._emit("compress_file_status", {"index": index, "status": status})
 
 
+@_wrap_ui_logging
 class VideoEditorApi:
     """JSON API exposed to JavaScript as window.pywebview.api."""
 
@@ -168,15 +254,11 @@ class VideoEditorApi:
             return self._err("Window not ready")
         try:
             import webview
-            dialog_type = webview.OPEN_DIALOG
-            file_types = None
-            if extensions:
-                ext_list = [e.strip() for e in extensions.split(";") if e.strip()]
-                if ext_list:
-                    file_types = (("Videos", " ".join(ext_list)),)
+            directory = _normalize_dialog_dir(initial_dir)
+            file_types = _build_file_types(extensions)
             files = self._window.create_file_dialog(
-                dialog_type,
-                directory=initial_dir or None,
+                webview.OPEN_DIALOG,
+                directory=directory,
                 allow_multiple=True,
                 file_types=file_types,
             )
@@ -185,6 +267,7 @@ class VideoEditorApi:
                 self._config.set_last_input_folder(os.path.dirname(paths[0]))
             return self._ok({"paths": paths})
         except Exception as e:
+            logger.exception("pick_files failed")
             return self._err(str(e))
 
     def pick_folder(self, initial_dir: str = "", title: str = "", folder_kind: str = "") -> dict:
@@ -192,9 +275,10 @@ class VideoEditorApi:
             return self._err("Window not ready")
         try:
             import webview
+            directory = _normalize_dialog_dir(initial_dir)
             folders = self._window.create_file_dialog(
                 webview.FOLDER_DIALOG,
-                directory=initial_dir or None,
+                directory=directory,
             )
             path = folders[0] if folders else None
             if path and folder_kind:
@@ -208,6 +292,7 @@ class VideoEditorApi:
                     self._config.set_last_join_output_folder(path)
             return self._ok({"path": path, "title": title})
         except Exception as e:
+            logger.exception("pick_folder failed")
             return self._err(str(e))
 
     def open_path_in_explorer(self, path: str) -> dict:
@@ -238,6 +323,8 @@ class VideoEditorApi:
 
     def compress_get_options(self) -> dict:
         crf, preset, resolution = self._config.get_encoding_settings()
+        use_gpu, use_all_cores = self._config.get_performance_settings()
+        cap_cpu_50 = self._config.get_cpu_cap_setting()
         target_fps = self._config.get_target_fps()
         fps_default = FPS_OPTIONS[0]
         if target_fps is not None:
@@ -260,9 +347,9 @@ class VideoEditorApi:
                 "crf": crf,
                 "preset": preset,
                 "output_folder": self._config.get_last_output_folder() or "",
-                "use_gpu": False,
-                "use_all_cores": False,
-                "cap_cpu_50": False,
+                "use_gpu": use_gpu,
+                "use_all_cores": use_all_cores,
+                "cap_cpu_50": cap_cpu_50,
             },
             "last_input_folder": self._config.get_last_input_folder(),
             "gpu_available": self._check_gpu_available(),
@@ -419,25 +506,39 @@ class VideoEditorApi:
 
             status = "Completed" if ok else "Error"
             reporter.on_file_status(index, status)
-            processed += 1
-            reporter.on_progress({"Files Processed:": str(processed)})
+            if ok:
+                processed += 1
+                reporter.on_progress({"Files Processed:": str(processed)})
+            else:
+                with self._jobs_lock:
+                    if self._jobs.get(job_id, {}).get("state") == "cancelled":
+                        break
 
         with self._jobs_lock:
-            state = self._jobs.get(job_id, {}).get("state", "running")
-            self._jobs[job_id]["state"] = "cancelled" if state == "cancelled" else "done"
-            self._jobs[job_id]["processed"] = processed
+            job = self._jobs.get(job_id)
+            if not job:
+                return
+            cancelled = job.get("state") == "cancelled"
+            job["state"] = "cancelled" if cancelled else "done"
+            job["processed"] = processed
 
-        self._emit_event("compress_complete", {"job_id": job_id, "processed": processed})
+        self._emit_event("compress_complete", {
+            "job_id": job_id,
+            "processed": processed,
+            "cancelled": cancelled,
+        })
 
     def compress_cancel(self, job_id: str = "") -> dict:
-        self._processor.cancel()
         with self._jobs_lock:
-            if job_id and job_id in self._jobs:
+            if job_id:
+                if job_id not in self._jobs:
+                    return self._err("Job not found")
                 self._jobs[job_id]["state"] = "cancelled"
             else:
-                for jid, job in self._jobs.items():
+                for job in self._jobs.values():
                     if job.get("type") == "compress" and job.get("state") == "running":
                         job["state"] = "cancelled"
+        self._processor.cancel()
         return self._ok()
 
     def compress_get_status(self, job_id: str) -> dict:
@@ -503,14 +604,29 @@ class VideoEditorApi:
                 except OSError:
                     pass
         with self._jobs_lock:
-            self._jobs[job_id]["state"] = "done" if ok else "error"
-        self._emit_event("join_complete", {"job_id": job_id, "success": ok, "output": output_file})
+            job = self._jobs.get(job_id)
+            if not job:
+                return
+            cancelled = job.get("state") == "cancelled"
+            job["state"] = "cancelled" if cancelled else ("done" if ok else "error")
+        self._emit_event("join_complete", {
+            "job_id": job_id,
+            "success": ok and not cancelled,
+            "cancelled": cancelled,
+            "output": output_file if ok and not cancelled else "",
+        })
 
     def join_cancel(self, job_id: str = "") -> dict:
-        self._joiner.cancel()
         with self._jobs_lock:
-            if job_id and job_id in self._jobs:
+            if job_id:
+                if job_id not in self._jobs:
+                    return self._err("Job not found")
                 self._jobs[job_id]["state"] = "cancelled"
+            else:
+                for job in self._jobs.values():
+                    if job.get("type") == "join" and job.get("state") == "running":
+                        job["state"] = "cancelled"
+        self._joiner.cancel()
         return self._ok()
 
     def settings_get_summary(self) -> dict:

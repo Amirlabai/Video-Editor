@@ -5,7 +5,7 @@ a = Analysis(
     ['C:\\Users\\amirl\\OneDrive\\Documents\\GitHub\\Video-Editor\\src\\web_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('C:\\Users\\amirl\\OneDrive\\Documents\\GitHub\\Video-Editor\\src\\web', 'web'), ('C:\\Users\\amirl\\OneDrive\\Documents\\GitHub\\Video-Editor\\assets', 'assets')],
+    datas=[('C:\\Users\\amirl\\OneDrive\\Documents\\GitHub\\Video-Editor\\src\\web', 'web'), ('C:\\Users\\amirl\\OneDrive\\Documents\\GitHub\\Video-Editor\\assets', 'assets'), ('C:\\Users\\amirl\\OneDrive\\Documents\\GitHub\\Video-Editor\\vendor\\ffmpeg\\win64', 'vendor/ffmpeg/win64'), ('C:\\Users\\amirl\\OneDrive\\Documents\\GitHub\\Video-Editor\\vendor\\ffmpeg\\NOTICE.txt', 'vendor/ffmpeg')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

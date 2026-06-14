@@ -6,11 +6,37 @@ const CompressUI = (function () {
   let jobId = null;
   let processing = false;
 
+  const BUSY_IDS = [
+    'compress-add-files', 'compress-add-folder', 'compress-remove',
+    'compress-browse-output', 'compress-reset', 'compress-gpu',
+    'compress-all-cores', 'compress-cap-50', 'compress-fps',
+    'compress-resolution', 'compress-crf', 'compress-preset',
+  ];
+
   const METRIC_KEYS = [
     'Total Files:', 'Files Processed:', 'Current File:',
     'Frames Processed:', 'Progress:', 'Average Frame Rate:',
     'Time Running:', 'Time Remaining:',
   ];
+
+  function setBusy(busy) {
+    BUSY_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = busy;
+    });
+    document.getElementById('compress-run').disabled = busy;
+  }
+
+  function finishJob(data) {
+    processing = false;
+    jobId = null;
+    setBusy(false);
+    if (data.cancelled) {
+      showAlert('Processing cancelled. Processed: ' + (data.processed || 0), 'info');
+    } else {
+      showAlert('Batch processing finished. Processed: ' + (data.processed || 0), 'success');
+    }
+  }
 
   function fillSelect(id, options, value) {
     const sel = document.getElementById(id);
@@ -57,7 +83,9 @@ const CompressUI = (function () {
     videos.forEach((v, i) => {
       const tr = document.createElement('tr');
       tr.dataset.index = i;
-      if (i === selectedIndex) tr.classList.add('selected');
+      const selected = i === selectedIndex;
+      if (selected) tr.classList.add('selected');
+      tr.setAttribute('aria-selected', selected ? 'true' : 'false');
       tr.innerHTML = `
         <td>${escapeHtml(v.file || '')}</td>
         <td>${escapeHtml(v.resolution || '')}</td>
@@ -74,6 +102,7 @@ const CompressUI = (function () {
       tr.addEventListener('dblclick', () => {
         v.is_vertical = !v.is_vertical;
         v.orientation = v.is_vertical ? 'Vertical' : 'Horizontal';
+        uiLog('Compress: toggle orientation for ' + (v.file || v.path));
         renderTable();
       });
       tbody.appendChild(tr);
@@ -105,6 +134,13 @@ const CompressUI = (function () {
     };
   }
 
+  function applyPerformanceDefaults(defaults, gpuAvailable) {
+    const gpu = document.getElementById('compress-gpu');
+    gpu.checked = !!defaults.use_gpu && gpuAvailable;
+    document.getElementById('compress-all-cores').checked = !!defaults.use_all_cores;
+    document.getElementById('compress-cap-50').checked = !!defaults.cap_cpu_50;
+  }
+
   async function loadOptions() {
     const r = await window.pywebview.api.compress_get_options();
     if (!r || r.status !== 'success') return;
@@ -115,7 +151,7 @@ const CompressUI = (function () {
     document.getElementById('compress-output').value = r.defaults.output_folder || '';
     const gpu = document.getElementById('compress-gpu');
     gpu.disabled = !r.gpu_available;
-    if (!r.gpu_available) gpu.checked = false;
+    applyPerformanceDefaults(r.defaults, r.gpu_available);
   }
 
   async function addPaths(paths) {
@@ -133,17 +169,32 @@ const CompressUI = (function () {
     initMetrics();
     await loadOptions();
 
+    document.getElementById('compress-all-cores').addEventListener('change', (e) => {
+      if (e.target.checked) document.getElementById('compress-cap-50').checked = false;
+    });
+    document.getElementById('compress-cap-50').addEventListener('change', (e) => {
+      if (e.target.checked) document.getElementById('compress-all-cores').checked = false;
+    });
+
     document.getElementById('compress-add-files').addEventListener('click', async () => {
       const opts = await window.pywebview.api.compress_get_options();
       const dir = (opts && opts.last_input_folder) || '';
       const r = await window.pywebview.api.pick_files(dir, '*.mp4;*.mkv;*.avi;*.mov;*.flv;*.wmv');
-      if (r && r.status === 'success') await addPaths(r.paths);
+      if (!r || r.status !== 'success') {
+        showAlert((r && r.message) || 'Could not open file picker', 'error');
+        return;
+      }
+      await addPaths(r.paths);
     });
 
     document.getElementById('compress-add-folder').addEventListener('click', async () => {
       const opts = await window.pywebview.api.compress_get_options();
       const r = await window.pywebview.api.pick_folder((opts && opts.last_input_folder) || '', 'Select folder', 'input');
-      if (r && r.status === 'success' && r.path) {
+      if (!r || r.status !== 'success') {
+        showAlert((r && r.message) || 'Could not open folder picker', 'error');
+        return;
+      }
+      if (r.path) {
         const scan = await window.pywebview.api.join_scan_folder(r.path);
         if (scan && scan.status === 'success') await addPaths(scan.files || []);
       }
@@ -152,13 +203,18 @@ const CompressUI = (function () {
     document.getElementById('compress-browse-output').addEventListener('click', async () => {
       const r = await window.pywebview.api.pick_folder(
         document.getElementById('compress-output').value, 'Output folder', 'output');
-      if (r && r.status === 'success' && r.path) {
+      if (!r || r.status !== 'success') {
+        showAlert((r && r.message) || 'Could not open folder picker', 'error');
+        return;
+      }
+      if (r.path) {
         document.getElementById('compress-output').value = r.path;
       }
     });
 
     document.getElementById('compress-remove').addEventListener('click', () => {
       if (selectedIndex >= 0) {
+        uiLog('Compress: remove video at index ' + selectedIndex);
         videos.splice(selectedIndex, 1);
         selectedIndex = -1;
         renderTable();
@@ -166,17 +222,8 @@ const CompressUI = (function () {
     });
 
     document.getElementById('compress-reset').addEventListener('click', async () => {
+      uiLog('Compress: reset settings');
       await loadOptions();
-      document.getElementById('compress-gpu').checked = false;
-      document.getElementById('compress-all-cores').checked = false;
-      document.getElementById('compress-cap-50').checked = false;
-      const r = await window.pywebview.api.compress_get_options();
-      if (r && r.status === 'success') {
-        document.getElementById('compress-fps').value = r.fps_options[0];
-        document.getElementById('compress-resolution').value = r.resolution_options[0];
-        document.getElementById('compress-crf').value = String(r.crf_max);
-        document.getElementById('compress-preset').value = 'ultrafast';
-      }
     });
 
     document.getElementById('compress-run').addEventListener('click', async () => {
@@ -186,7 +233,7 @@ const CompressUI = (function () {
       if (!settings.output_folder) { showAlert('Select output folder.', 'error'); return; }
       processing = true;
       document.getElementById('compress-log').textContent = '';
-      document.getElementById('compress-run').disabled = true;
+      setBusy(true);
       const payload = {
         videos: videos.map(v => ({ path: v.path, is_vertical: !!v.is_vertical })),
         settings,
@@ -195,7 +242,7 @@ const CompressUI = (function () {
       if (!r || r.status !== 'success') {
         showAlert((r && r.message) || 'Failed to start', 'error');
         processing = false;
-        document.getElementById('compress-run').disabled = false;
+        setBusy(false);
         return;
       }
       jobId = r.job_id;
@@ -206,30 +253,26 @@ const CompressUI = (function () {
     });
   }
 
-  window.onCompressProgress = function (data) {
+  window.compress_progress = function (data) {
     Object.keys(data).forEach(k => {
       if (METRIC_KEYS.includes(k)) updateMetric(k, data[k]);
-      if (k === 'Frames Processed:') updateMetric('Frames Processed:', data[k]);
     });
     if (data.percent !== undefined) updateMetric('Progress:', data.percent.toFixed(2) + '%');
   };
 
-  window.onCompressLog = function (data) {
+  window.compress_log = function (data) {
     if (data.line) appendLog(data.line);
   };
 
-  window.onCompressFileStatus = function (data) {
+  window.compress_file_status = function (data) {
     if (data.index >= 0 && videos[data.index]) {
       videos[data.index].status = data.status;
       renderTable();
     }
   };
 
-  window.onCompressComplete = function (data) {
-    processing = false;
-    jobId = null;
-    document.getElementById('compress-run').disabled = false;
-    showAlert('Batch processing finished. Processed: ' + (data.processed || 0), 'success');
+  window.compress_complete = function (data) {
+    finishJob(data);
   };
 
   return { init, loadOptions };

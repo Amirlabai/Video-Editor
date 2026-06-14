@@ -18,12 +18,16 @@ function flushLogs() {
   }
 }
 
-function showLoading(show) {
-  document.getElementById('loading-overlay').classList.toggle('open', !!show);
+function uiLog(msg) {
+  logger.info(msg);
+  flushLogs();
 }
 
 function showAlert(message, type = 'info') {
   const region = document.getElementById('alert-region');
+  while (region.children.length >= 3) {
+    region.firstChild.remove();
+  }
   const toast = document.createElement('div');
   toast.className = 'alert-toast ' + (type === 'error' ? 'error' : type === 'success' ? 'success' : '');
   toast.setAttribute('role', 'alert');
@@ -33,13 +37,13 @@ function showAlert(message, type = 'info') {
 }
 
 function trapModalFocus(overlay) {
+  const modalId = overlay.id;
   const focusable = overlay.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
   const first = focusable[0];
   const last = focusable[focusable.length - 1];
   function onKey(e) {
     if (e.key === 'Escape') {
-      overlay.classList.remove('open');
-      if (modalReturnFocus) modalReturnFocus.focus();
+      hideModal(modalId);
       overlay.removeEventListener('keydown', onKey);
       return;
     }
@@ -68,73 +72,66 @@ function hideModal(id) {
   if (modalReturnFocus) modalReturnFocus.focus();
 }
 
-function showConfirmModal(message) {
-  return new Promise((resolve) => {
-    document.getElementById('alert-modal-title').textContent = 'Confirm';
-    document.getElementById('alert-modal-body').textContent = message;
-    const ok = document.getElementById('alert-modal-ok');
-    const handler = () => {
-      ok.removeEventListener('click', handler);
-      hideModal('alert-modal');
-      resolve(true);
-    };
-    ok.addEventListener('click', handler);
-    showModal('alert-modal');
-  });
-}
-
 function navigate(view) {
+  uiLog('Navigate: ' + view);
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   const section = document.getElementById('view-' + view);
   if (section) section.classList.add('active');
+  document.querySelectorAll('.nav-btn[data-view]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === view);
+  });
   if (view === 'settings') loadSettingsView();
   if (view === 'compress' && window.CompressUI) CompressUI.loadOptions();
 }
 
 async function loadSettingsView() {
-  const pathR = await window.pywebview.api.settings_get_path();
-  if (pathR && pathR.status === 'success') {
-    document.getElementById('settings-config-path').textContent = pathR.file;
-  }
-  const sumR = await window.pywebview.api.settings_get_summary();
-  if (sumR && sumR.status === 'success') {
-    const s = sumR;
-    const text = [
-      'Performance Settings:',
-      `  Use GPU: ${s.performance.use_gpu}`,
-      `  Use All CPU Cores: ${s.performance.use_all_cores}`,
-      `  Cap CPU 50%: ${s.performance.cap_cpu_50}`,
-      '',
-      'Encoding Defaults:',
-      `  Default CRF: ${s.encoding.crf}`,
-      `  Default Preset: ${s.encoding.preset}`,
-      `  Default Resolution: ${s.encoding.resolution}`,
-      '',
-      'Last Used Folders:',
-      `  Input: ${s.folders.last_input}`,
-      `  Output: ${s.folders.last_output}`,
-      `  Join Input: ${s.folders.last_join_input}`,
-      `  Join Output: ${s.folders.last_join_output}`,
-      '',
-      'Note: Settings are saved automatically when you use the application.',
-    ].join('\n');
-    document.getElementById('settings-summary').textContent = text;
-  }
-  const ff = await window.pywebview.api.get_ffmpeg_notice();
-  if (ff && ff.status === 'success') {
-    const bundled = ff.bundled ? 'bundled with this application' : 'from system PATH';
-    document.getElementById('settings-ffmpeg-credit').textContent =
-      `Video processing uses FFmpeg (${bundled}). FFmpeg is a trademark of Fabrice Bellard.`;
-    const notice = [
-      ff.version_line || '',
-      '',
-      ff.notice || '',
-      '',
-      `Project: ${ff.project_url}`,
-      `Legal: ${ff.legal_url}`,
-      `Build source: ${ff.source_url}`,
-    ].join('\n');
-    document.getElementById('settings-ffmpeg-notice').textContent = notice;
+  try {
+    const pathR = await window.pywebview.api.settings_get_path();
+    if (pathR && pathR.status === 'success') {
+      document.getElementById('settings-config-path').textContent = pathR.file;
+    }
+    const sumR = await window.pywebview.api.settings_get_summary();
+    if (sumR && sumR.status === 'success') {
+      const s = sumR;
+      const text = [
+        'Performance Settings:',
+        `  Use GPU: ${s.performance.use_gpu}`,
+        `  Use All CPU Cores: ${s.performance.use_all_cores}`,
+        `  Cap CPU 50%: ${s.performance.cap_cpu_50}`,
+        '',
+        'Encoding Defaults:',
+        `  Default CRF: ${s.encoding.crf}`,
+        `  Default Preset: ${s.encoding.preset}`,
+        `  Default Resolution: ${s.encoding.resolution}`,
+        '',
+        'Last Used Folders:',
+        `  Input: ${s.folders.last_input}`,
+        `  Output: ${s.folders.last_output}`,
+        `  Join Input: ${s.folders.last_join_input}`,
+        `  Join Output: ${s.folders.last_join_output}`,
+        '',
+        'Note: Settings are saved automatically when you use the application.',
+      ].join('\n');
+      document.getElementById('settings-summary').textContent = text;
+    }
+    const ff = await window.pywebview.api.get_ffmpeg_notice();
+    if (ff && ff.status === 'success') {
+      const bundled = ff.bundled ? 'bundled with this application' : 'from system PATH';
+      document.getElementById('settings-ffmpeg-credit').textContent =
+        `Video processing uses FFmpeg (${bundled}). FFmpeg is a trademark of Fabrice Bellard.`;
+      const notice = [
+        ff.version_line || '',
+        '',
+        ff.notice || '',
+        '',
+        `Project: ${ff.project_url}`,
+        `Legal: ${ff.legal_url}`,
+        `Build source: ${ff.source_url}`,
+      ].join('\n');
+      document.getElementById('settings-ffmpeg-notice').textContent = notice;
+    }
+  } catch (e) {
+    showAlert('Failed to load settings: ' + e, 'error');
   }
 }
 
@@ -188,7 +185,11 @@ function setupNavigation() {
   document.querySelectorAll('[data-view]').forEach(btn => {
     btn.addEventListener('click', () => navigate(btn.dataset.view));
   });
-  document.getElementById('btn-exit').addEventListener('click', () => window.pywebview.api.exit_app());
+  document.getElementById('btn-exit').addEventListener('click', () => {
+    uiLog('Exit application');
+    window.pywebview.api.exit_app();
+  });
+  navigate('home');
 }
 
 function setupSettings() {
@@ -200,7 +201,12 @@ function setupSettings() {
   document.getElementById('settings-open-folder').addEventListener('click', async () => {
     const r = await window.pywebview.api.settings_get_path();
     if (r && r.status === 'success') {
-      await window.pywebview.api.open_path_in_explorer(r.directory);
+      const openR = await window.pywebview.api.open_path_in_explorer(r.directory);
+      if (!openR || openR.status !== 'success') {
+        showAlert((openR && openR.message) || 'Could not open folder', 'error');
+      }
+    } else {
+      showAlert((r && r.message) || 'Could not get config path', 'error');
     }
   });
   document.getElementById('settings-copy-path').addEventListener('click', async () => {
@@ -233,6 +239,7 @@ window.onunhandledrejection = (e) => {
 
 window.addEventListener('pywebviewready', async () => {
   flushLogs();
+  uiLog('Main UI ready');
   setupNavigation();
   setupSettings();
   try {
@@ -246,7 +253,7 @@ window.addEventListener('pywebviewready', async () => {
       }
     }
     if (window.CompressUI) await CompressUI.init();
-    if (window.JoinUI) JoinUI.init();
+    if (window.JoinUI) await JoinUI.init();
     await checkForUpdates(false);
   } catch (e) {
     showAlert('Startup error: ' + e, 'error');

@@ -2,6 +2,14 @@
 
 const JoinUI = (function () {
   let jobId = null;
+  let processing = false;
+
+  function setBusy(busy) {
+    processing = busy;
+    document.getElementById('join-start').disabled = busy;
+    document.getElementById('join-pick-input').disabled = busy;
+    document.getElementById('join-pick-output').disabled = busy;
+  }
 
   function appendLog(line) {
     const log = document.getElementById('join-log');
@@ -9,10 +17,30 @@ const JoinUI = (function () {
     log.scrollTop = log.scrollHeight;
   }
 
-  function init() {
+  async function loadLastFolders() {
+    const r = await window.pywebview.api.settings_get_summary();
+    if (!r || r.status !== 'success') return;
+    const input = r.folders.last_join_input;
+    const output = r.folders.last_join_output;
+    if (input && input !== '(none)') {
+      document.getElementById('join-input').value = input;
+    }
+    if (output && output !== '(none)') {
+      document.getElementById('join-output').value = output;
+    }
+  }
+
+  async function init() {
+    await loadLastFolders();
+
     document.getElementById('join-pick-input').addEventListener('click', async () => {
-      const r = await window.pywebview.api.pick_folder('', 'Select folder with videos', 'join_input');
-      if (r && r.status === 'success' && r.path) {
+      const initial = document.getElementById('join-input').value;
+      const r = await window.pywebview.api.pick_folder(initial, 'Select folder with videos', 'join_input');
+      if (!r || r.status !== 'success') {
+        showAlert((r && r.message) || 'Could not open folder picker', 'error');
+        return;
+      }
+      if (r.path) {
         document.getElementById('join-input').value = r.path;
         const scan = await window.pywebview.api.join_scan_folder(r.path);
         if (scan && scan.status === 'success') {
@@ -26,19 +54,26 @@ const JoinUI = (function () {
     document.getElementById('join-pick-output').addEventListener('click', async () => {
       const input = document.getElementById('join-input').value;
       const r = await window.pywebview.api.pick_folder(input, 'Output folder (optional)', 'join_output');
-      if (r && r.status === 'success' && r.path) {
+      if (!r || r.status !== 'success') {
+        showAlert((r && r.message) || 'Could not open folder picker', 'error');
+        return;
+      }
+      if (r.path) {
         document.getElementById('join-output').value = r.path;
       }
     });
 
     document.getElementById('join-start').addEventListener('click', async () => {
+      if (processing) return;
       const input = document.getElementById('join-input').value;
       const output = document.getElementById('join-output').value;
       if (!input) { showAlert('Select input folder.', 'error'); return; }
       document.getElementById('join-log').textContent = '';
+      setBusy(true);
       const r = await window.pywebview.api.join_start(input, output);
       if (!r || r.status !== 'success') {
         showAlert((r && r.message) || 'Join failed to start', 'error');
+        setBusy(false);
         return;
       }
       jobId = r.job_id;
@@ -49,20 +84,23 @@ const JoinUI = (function () {
     });
   }
 
-  window.onJoinLog = function (data) {
+  window.join_log = function (data) {
     if (data.line) appendLog(data.line);
   };
 
-  window.onJoinProgress = function (data) {
+  window.join_progress = function (data) {
     if (data.message) appendLog(data.message + '\n');
   };
 
-  window.onJoinComplete = function (data) {
+  window.join_complete = function (data) {
     jobId = null;
-    if (data.success) {
+    setBusy(false);
+    if (data.cancelled) {
+      showAlert('Join cancelled.', 'info');
+    } else if (data.success) {
       showAlert('Videos joined: ' + data.output, 'success');
     } else {
-      showAlert('Join failed or was cancelled.', 'error');
+      showAlert('Join failed.', 'error');
     }
   };
 

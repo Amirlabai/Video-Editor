@@ -25,11 +25,15 @@
 
     <!-- Home -->
     <section id="view-home" class="view active" aria-labelledby="home-title">
-      <h2 id="home-title" class="panel-title">Video Editor</h2>
-      <div class="home-grid">
-        <button type="button" class="btn btn-primary" data-view="compress">Scale Down A Videos</button>
-        <button type="button" class="btn btn-primary" data-view="join">Combine Videos</button>
-        <button type="button" class="btn" data-view="settings">Settings</button>
+      <div class="panel home-welcome">
+        <h2 id="home-title" class="panel-title">Welcome</h2>
+        <p class="home-lead">Scale down videos to smaller resolutions, or combine multiple clips into one file.</p>
+        <ul class="home-features">
+          <li><strong>Scale Down Videos</strong> — Reduce resolution and file size with FFmpeg encoding options.</li>
+          <li><strong>Combine Videos</strong> — Join compatible clips from a folder into a single output.</li>
+          <li><strong>Settings</strong> — View config path, encoding defaults, and update checks.</li>
+        </ul>
+        <p class="home-hint">Choose a task from the menu above to begin.</p>
       </div>
     </section>
 
@@ -112,7 +116,7 @@
 
           <div id="compress-progress-region" aria-live="polite" aria-atomic="false">
             <div class="progress-grid" id="compress-metrics"></div>
-            <div class="progress-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="compress-progress-bar-wrap">
+            <div class="progress-bar-wrap" role="progressbar" aria-label="Encoding progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="compress-progress-bar-wrap">
               <div class="progress-bar-fill" id="compress-progress-bar"></div>
             </div>
           </div>
@@ -205,8 +209,6 @@
     <div class="block-spinner"></div>
   </div>
   <div id="alert-region" role="status" aria-live="polite"></div>
-
-  <style>.visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }</style>
 
   <script src="app.js"></script>
   <script src="compress.js"></script>

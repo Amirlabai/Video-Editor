@@ -5,6 +5,7 @@
   --bg-button: #323232;
   --bg-button-hover: #262626;
   --bg-row-alt: #2a2a2a;
+  --bg-row-selected: #2d3a4a;
   --border: #474747;
   --text: #d5d5d5;
   --text-muted: #9a9a9a;
@@ -62,6 +63,10 @@ nav.app-nav {
   background: var(--bg-panel);
   border-bottom: 2px solid var(--border);
   flex-wrap: wrap;
+}
+.nav-btn.active {
+  background: var(--accent);
+  border-color: #325882;
 }
 
 main#main-content {
@@ -154,16 +159,38 @@ label.field-label {
 .view { display: none; }
 .view.active { display: block; }
 
-.home-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  max-width: 600px;
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.home-welcome {
+  max-width: 640px;
   margin: 20px auto;
 }
-.home-grid .btn {
-  width: 100%;
-  text-align: center;
+.home-lead {
+  margin: 0 0 12px 0;
+  color: var(--text);
+  line-height: 1.5;
+}
+.home-features {
+  margin: 0 0 12px 0;
+  padding-left: 20px;
+  line-height: 1.6;
+}
+.home-features li {
+  margin-bottom: 8px;
+}
+.home-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .compress-layout {
@@ -202,7 +229,7 @@ table.data-table th {
   font-weight: bold;
 }
 table.data-table tr:nth-child(even) { background: var(--bg-row-alt); }
-table.data-table tr.selected { background: #2d3a4a; }
+table.data-table tr.selected { background: var(--bg-row-selected); }
 table.data-table tr { cursor: pointer; }
 
 .progress-grid {
@@ -238,7 +265,7 @@ table.data-table tr { cursor: pointer; }
   border: 2px solid var(--border);
   padding: 8px;
   min-height: 120px;
-  max-height: 200px;
+  max-height: 320px;
   overflow: auto;
   font-family: var(--font-mono);
   font-size: 12px;

@@ -38,6 +38,7 @@ def main() -> None:
         raise
 
     api = VideoEditorApi()
+    logger.info("ffmpegMagic started (frozen=%s)", is_frozen())
 
     if os.environ.get("FFMPEGMAGIC_SKIP_SPLASH") == "1" and not is_frozen():
         start_url = asset_file_uri("web/index.html")

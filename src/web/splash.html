@@ -18,7 +18,11 @@
     </div>
   </main>
   <script>
+    let bootStarted = false;
+
     async function boot() {
+      if (bootStarted) return;
+      bootStarted = true;
       const hint = document.getElementById('splash-hint');
       const actions = document.getElementById('splash-actions');
       try {
@@ -34,8 +38,18 @@
         actions.classList.remove('hidden');
       }
     }
+
     window.addEventListener('pywebviewready', boot);
-    document.getElementById('splash-retry').addEventListener('click', boot);
+    setTimeout(() => {
+      if (bootStarted) return;
+      document.getElementById('splash-hint').textContent = 'Startup timed out. Retry or exit.';
+      document.getElementById('splash-actions').classList.remove('hidden');
+    }, 15000);
+
+    document.getElementById('splash-retry').addEventListener('click', () => {
+      bootStarted = false;
+      boot();
+    });
     document.getElementById('splash-exit').addEventListener('click', () => window.pywebview.api.exit_app());
   </script>
 </body>

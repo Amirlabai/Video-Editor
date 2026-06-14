@@ -52,4 +52,5 @@ Single public repo ([Amirlabai/Video-Editor](https://github.com/Amirlabai/Video-
 
 - Run Python via `.\.venv\Scripts\python.exe`
 - JSON API envelope: `{"status": "success"|"error", ...}`
+- Bridge pushes job events via `evaluate_js` on `window` globals: `compress_progress`, `compress_log`, `compress_file_status`, `compress_complete`, `join_progress`, `join_log`, `join_complete`
 - Windows GUI target; Linux/macOS CLI-only unless webview backend added later
