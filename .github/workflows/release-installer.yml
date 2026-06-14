@@ -1,11 +1,15 @@
 name: Build and Release Installer
 
-# Build installer on Windows CI after semantic-release publishes a tag, then
-# upload the .exe to that GitHub Release and refresh latest.json on main.
+# Build installer on Windows CI after Semantic Release, then upload to the
+# matching GitHub Release tag and refresh latest.json on main.
+#
+# Note: release:published does not fire when semantic-release uses GITHUB_TOKEN,
+# so we chain via workflow_run on the Semantic Release workflow.
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Semantic Release"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
@@ -17,13 +21,19 @@ permissions:
 
 jobs:
   build:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: windows-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      skip: ${{ steps.meta.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || format('v{0}', github.event.inputs.version) }}
+          ref: ${{ github.event.workflow_run.head_sha || format('v{0}', github.event.inputs.version) }}
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -33,39 +43,56 @@ jobs:
         id: meta
         shell: bash
         run: |
-          if [ -n "${{ github.event.release.tag_name }}" ]; then
-            TAG="${{ github.event.release.tag_name }}"
-          else
+          if [ -n "${{ github.event.inputs.version }}" ]; then
             TAG="v${{ github.event.inputs.version }}"
+          else
+            SHA="${{ github.event.workflow_run.head_sha }}"
+            git fetch --tags --force
+            TAG=$(git tag --points-at "$SHA" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+            if [ -z "$TAG" ]; then
+              echo "No release tag on $SHA; skipping installer build"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
           VERSION="${TAG#v}"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "installer=prod/installers/ffmpegMagic_Setup_${VERSION}.exe" >> "$GITHUB_OUTPUT"
 
-      - name: Verify version matches src/_version.py
+      - name: Sync src/_version.py from pyproject.toml
+        if: steps.meta.outputs.skip != 'true'
+        run: python scripts/sync_version.py
+
+      - name: Verify version matches pyproject.toml
+        if: steps.meta.outputs.skip != 'true'
         shell: bash
         run: |
           expected="${{ steps.meta.outputs.version }}"
-          actual=$(python -c "exec(open('src/_version.py', encoding='utf-8').read()); print(__version__)")
+          actual=$(python -c "import re; t=open('pyproject.toml',encoding='utf-8').read(); print(re.search(r'^version = \"([^\"]+)\"', t, re.M).group(1))")
           if [ "$expected" != "$actual" ]; then
-            echo "src/_version.py ($actual) does not match tag ($expected)" >&2
+            echo "pyproject.toml ($actual) does not match tag ($expected)" >&2
             exit 1
           fi
 
       - name: Install Python dependencies
+        if: steps.meta.outputs.skip != 'true'
         run: pip install -r requirements.txt
 
       - name: Install Inno Setup
+        if: steps.meta.outputs.skip != 'true'
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
           Add-Content -Path $env:GITHUB_ENV -Value "INNO_SETUP_PATH=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
       - name: Build installer
+        if: steps.meta.outputs.skip != 'true'
         run: python prod/gen_exe.py
 
       - name: Write latest.json
+        if: steps.meta.outputs.skip != 'true'
         shell: bash
         run: |
           python scripts/publish_public_release.py \
@@ -75,6 +102,7 @@ jobs:
             --notes "Release ${{ steps.meta.outputs.version }}"
 
       - uses: actions/upload-artifact@v4
+        if: steps.meta.outputs.skip != 'true'
         with:
           name: release-files
           path: |
@@ -82,6 +110,7 @@ jobs:
             ${{ steps.meta.outputs.installer }}
 
       - name: Upload installer to GitHub Release
+        if: steps.meta.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -92,6 +121,7 @@ jobs:
 
   manifest:
     needs: build
+    if: needs.build.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

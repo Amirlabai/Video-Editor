@@ -27,6 +27,12 @@ FALLBACK_ISCC_PATHS = [
 
 
 def get_version() -> str:
+    pyproject = ROOT / "pyproject.toml"
+    if pyproject.is_file():
+        import re
+        match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.MULTILINE)
+        if match:
+            return match.group(1)
     ns = {}
     exec(VERSION_FILE.read_text(encoding="utf-8"), ns)
     return ns["__version__"]

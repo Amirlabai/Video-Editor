@@ -80,14 +80,10 @@ Output: `prod/installers/ffmpegMagic_Setup_{version}.exe`. PyInstaller intermedi
 No separate releases repo. Installers are built in CI and attached to GitHub Release tags on [Amirlabai/Video-Editor](https://github.com/Amirlabai/Video-Editor).
 
 1. Push features to `main` — semantic-release creates tag `vX.Y.Z` and a GitHub Release.
-2. [`.github/workflows/release-installer.yml`](.github/workflows/release-installer.yml) runs on `release: published`:
-   - Windows job: `prod/gen_exe.py` (PyInstaller + Inno Setup + bundled FFmpeg)
-   - Uploads `ffmpegMagic_Setup_X.Y.Z.exe` to that release tag
-   - Commits [`latest.json`](latest.json) on `main` (in-app update checker)
+2. **Build and Release Installer** runs after Semantic Release completes (GitHub does not fire `release: published` for releases created by `GITHUB_TOKEN`).
+3. Windows job: `prod/gen_exe.py` → uploads `ffmpegMagic_Setup_X.Y.Z.exe` to that tag → commits `latest.json`.
 
-Local build (optional): `.\.venv\Scripts\python.exe prod\gen_exe.py` → `prod/installers/` (gitignored).
-
-Manual retry: Actions → **Build and Release Installer** → Run workflow → version `X.Y.Z` (tag must exist).
+Backfill an existing tag: Actions → **Build and Release Installer** → Run workflow → version `X.Y.Z`.
 
 Update manifest URL: `https://raw.githubusercontent.com/Amirlabai/Video-Editor/main/latest.json`
 

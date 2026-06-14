@@ -21,7 +21,7 @@ dev = [
 ]
 
 [tool.semantic_release]
-version_variable = [
+version_variables = [
     "src/_version.py:__version__",
 ]
 version_toml = [
