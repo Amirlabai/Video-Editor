@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.1 (2026-06-14)
+
+### Bug Fixes
+
+- **gui**: Repair file picker and log UI actions
+  ([`c990c5d`](https://github.com/Amirlabai/Video-Editor/commit/c990c5d2c2f9a19aab7ff702b586e9b94345aa82))
+
+
 ## v1.2.0 (2026-06-14)
 
 ### Features
