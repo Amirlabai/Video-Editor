@@ -15,3 +15,5 @@ installer_files_*/
 vendor/ffmpeg/win64/*
 !vendor/ffmpeg/win64/.gitkeep
 !vendor/ffmpeg/win64/SOURCE.txt
+src/ffmpegMagic_dev_log.log
+.pytest_cache
