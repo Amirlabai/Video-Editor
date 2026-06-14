@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.2 (2026-06-14)
+
+### Bug Fixes
+
+- Build it
+  ([`309ac20`](https://github.com/Amirlabai/Video-Editor/commit/309ac209164a3b81c981049182fb77f035c1baca))
+
+
 ## v1.2.1 (2026-06-14)
 
 ### Bug Fixes
