@@ -10,8 +10,8 @@ user_data/*
 !user_data/.gitkeep
 build/
 installer_files_*/
-!prod/installers/
-!prod/installers/*.exe
+prod/installers/
+!prod/installers/.gitkeep
 vendor/ffmpeg/win64/*
 !vendor/ffmpeg/win64/.gitkeep
 !vendor/ffmpeg/win64/SOURCE.txt

@@ -2,7 +2,7 @@
 """
 Build latest.json for the in-app update checker and validate installer assets.
 
-Installer .exe files are uploaded to GitHub Releases on this repo (public).
+Installer .exe files are built in CI and uploaded to GitHub Releases on this repo.
 See .github/workflows/release-installer.yml
 """
 

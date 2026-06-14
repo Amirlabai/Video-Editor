@@ -1,6 +1,7 @@
-name: Attach Installer to Release
+name: Build and Release Installer
 
-# Upload committed installer to a GitHub Release on this repo and refresh latest.json.
+# Build installer on Windows CI after semantic-release publishes a tag, then
+# upload the .exe to that GitHub Release and refresh latest.json on main.
 
 on:
   release:
@@ -8,24 +9,21 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version X.Y.Z (without v prefix)"
+        description: "Version X.Y.Z (without v prefix); release tag must already exist"
         required: true
-  push:
-    branches: [main]
-    paths:
-      - "prod/installers/*.exe"
 
 permissions:
   contents: write
 
 jobs:
-  attach:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.release.tag_name || format('v{0}', github.event.inputs.version) }}
 
       - uses: actions/setup-python@v5
         with:
@@ -37,28 +35,38 @@ jobs:
         run: |
           if [ -n "${{ github.event.release.tag_name }}" ]; then
             TAG="${{ github.event.release.tag_name }}"
-            VERSION="${TAG#v}"
-          elif [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-            TAG="v${VERSION}"
           else
-            INSTALLER=$(ls prod/installers/ffmpegMagic_Setup_*.exe 2>/dev/null | head -1)
-            if [ -z "$INSTALLER" ]; then
-              echo "No installer found under prod/installers/" >&2
-              exit 1
-            fi
-            BASENAME=$(basename "$INSTALLER" .exe)
-            VERSION="${BASENAME#ffmpegMagic_Setup_}"
-            TAG="v${VERSION}"
+            TAG="v${{ github.event.inputs.version }}"
           fi
+          VERSION="${TAG#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "installer=prod/installers/ffmpegMagic_Setup_${VERSION}.exe" >> "$GITHUB_OUTPUT"
 
-      - name: Verify installer file
-        run: test -f "${{ steps.meta.outputs.installer }}"
+      - name: Verify version matches src/_version.py
+        shell: bash
+        run: |
+          expected="${{ steps.meta.outputs.version }}"
+          actual=$(python -c "exec(open('src/_version.py', encoding='utf-8').read()); print(__version__)")
+          if [ "$expected" != "$actual" ]; then
+            echo "src/_version.py ($actual) does not match tag ($expected)" >&2
+            exit 1
+          fi
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          Add-Content -Path $env:GITHUB_ENV -Value "INNO_SETUP_PATH=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+
+      - name: Build installer
+        run: python prod/gen_exe.py
 
       - name: Write latest.json
+        shell: bash
         run: |
           python scripts/publish_public_release.py \
             --version "${{ steps.meta.outputs.version }}" \
@@ -66,13 +74,35 @@ jobs:
             --write-manifest latest.json \
             --notes "Release ${{ steps.meta.outputs.version }}"
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: |
+            latest.json
+            ${{ steps.meta.outputs.installer }}
+
       - name: Upload installer to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           gh release upload "${{ steps.meta.outputs.tag }}" \
             "${{ steps.meta.outputs.installer }}" \
             --clobber
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: .
 
       - name: Commit latest.json
         run: |
@@ -82,6 +112,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "latest.json unchanged"
           else
-            git commit -m "chore: update latest.json for ${{ steps.meta.outputs.version }}"
+            git commit -m "chore: update latest.json for ${{ needs.build.outputs.version }}"
             git push
           fi

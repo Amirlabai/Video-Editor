@@ -1,2 +1,2 @@
-# Place Windows installers here, then commit and push.
+# CI builds installers; do not commit .exe here.
 # Workflow .github/workflows/release-installer.yml uploads to the matching GitHub Release tag.
