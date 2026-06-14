@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || format('v{0}', github.event.inputs.version) }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || 'main' }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -46,11 +46,10 @@ jobs:
           if [ -n "${{ github.event.inputs.version }}" ]; then
             TAG="v${{ github.event.inputs.version }}"
           else
-            SHA="${{ github.event.workflow_run.head_sha }}"
-            git fetch --tags --force
-            TAG=$(git tag --points-at "$SHA" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
-            if [ -z "$TAG" ]; then
-              echo "No release tag on $SHA; skipping installer build"
+            git fetch --tags --force origin main
+            TAG=$(git describe --exact-match --tags HEAD 2>/dev/null || true)
+            if [ -z "$TAG" ] || ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "HEAD has no semver release tag; skipping installer build"
               echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi

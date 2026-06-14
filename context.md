@@ -46,7 +46,7 @@ Single public repo ([Amirlabai/Video-Editor](https://github.com/Amirlabai/Video-
 
 - Build: CI `release-installer.yml` runs `prod/gen_exe.py` on `windows-latest`; local build optional
 - Output: `prod/installers/ffmpegMagic_Setup_{version}.exe` (gitignored; uploaded to release tag)
-- CI: `.github/workflows/release-installer.yml` uploads `.exe` to tag `v{version}` and commits `latest.json`
+- CI: `.github/workflows/release-installer.yml` chains off Semantic Release via `workflow_run`, checks out `main`, builds only when HEAD is exactly tagged `vX.Y.Z`, uploads `.exe` to that tag, and commits `latest.json`
 - Update manifest: `https://raw.githubusercontent.com/Amirlabai/Video-Editor/main/latest.json`
 
 ## Conventions
