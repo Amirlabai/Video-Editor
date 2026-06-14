@@ -1,7 +1,7 @@
 {
-  "version": "0.1.0",
-  "published_at": "2026-06-14T17:14:24Z",
-  "installer_url": "https://github.com/Amirlabai/Video-Editor/releases/download/v0.1.0/ffmpegMagic_Setup_0.1.0.exe",
-  "release_page": "https://github.com/Amirlabai/Video-Editor/releases/tag/v0.1.0",
-  "notes": "Initial PyWebView release"
+  "version": "1.2.4",
+  "published_at": "2026-06-14T18:26:32Z",
+  "installer_url": "https://github.com/Amirlabai/Video-Editor/releases/download/v1.2.4/ffmpegMagic_Setup_1.2.4.exe",
+  "release_page": "https://github.com/Amirlabai/Video-Editor/releases/tag/v1.2.4",
+  "notes": "Release 1.2.4"
 }
