@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.4 (2026-06-14)
+
+### Bug Fixes
+
+- **ci**: Resolve installer tag from main HEAD
+  ([`b913b13`](https://github.com/Amirlabai/Video-Editor/commit/b913b13015ee209cc6320d66c870686df532a4ee))
+
+
 ## v1.2.3 (2026-06-14)
 
 ### Bug Fixes
