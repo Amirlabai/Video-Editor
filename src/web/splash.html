@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ffmpegMagic — Starting</title>
+  <link rel="stylesheet" href="{{STYLE_URI}}">
+</head>
+<body class="splash-body">
+  <main class="splash-main" role="main">
+    <img id="splash-logo" src="{{LOGO_URI}}" alt="ffmpegMagic" width="64" height="64">
+    <h1>ffmpegMagic</h1>
+    <div class="block-spinner" aria-hidden="true"></div>
+    <p id="splash-hint" aria-live="polite">Starting…</p>
+    <div id="splash-actions" class="splash-actions hidden">
+      <button type="button" id="splash-retry" class="btn">Retry</button>
+      <button type="button" id="splash-exit" class="btn btn-danger">Exit</button>
+    </div>
+  </main>
+  <script>
+    async function boot() {
+      const hint = document.getElementById('splash-hint');
+      const actions = document.getElementById('splash-actions');
+      try {
+        const r = await window.pywebview.api.prepare_startup();
+        if (r && r.status === 'success') {
+          window.location.href = '{{INDEX_URI}}';
+        } else {
+          hint.textContent = (r && r.message) ? r.message : 'Startup failed';
+          actions.classList.remove('hidden');
+        }
+      } catch (e) {
+        hint.textContent = 'Startup error: ' + e;
+        actions.classList.remove('hidden');
+      }
+    }
+    window.addEventListener('pywebviewready', boot);
+    document.getElementById('splash-retry').addEventListener('click', boot);
+    document.getElementById('splash-exit').addEventListener('click', () => window.pywebview.api.exit_app());
+  </script>
+</body>
+</html>

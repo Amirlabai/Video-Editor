@@ -7,16 +7,15 @@ import subprocess
 import time
 import re
 import logging
-import tkinter as tk
 from typing import List, Optional
-from pathlib import Path
-from tkinter import messagebox
 
+from utils.ffmpeg_paths import subprocess_env
 from .VideoInfo import VideoInfo
 from .FFmpegCommandBuilder import FFmpegCommandBuilder
+from .progress_reporter import ProgressReporter, get_reporter
 from .constants import (
     SUPPORTED_VIDEO_FORMATS, JOINED_OUTPUT_FILENAME, CONCAT_LIST_FILENAME,
-    PROCESS_TERMINATION_TIMEOUT, CANCELLATION_MESSAGE_DELAY
+    PROCESS_TERMINATION_TIMEOUT,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,14 +23,12 @@ logger = logging.getLogger(__name__)
 
 class VideoJoiner:
     """Handles joining multiple video files into one."""
-    
+
     def __init__(self):
-        """Initialize VideoJoiner."""
         self._current_process: Optional[subprocess.Popen] = None
         self._cancel_requested: bool = False
-    
+
     def cancel(self) -> None:
-        """Cancel the current joining operation."""
         self._cancel_requested = True
         if self._current_process:
             try:
@@ -39,115 +36,73 @@ class VideoJoiner:
                 logger.info("FFmpeg process terminated by user")
             except Exception as e:
                 logger.error(f"Error terminating process: {e}")
-    
+
     def _average_list(self, my_list: List[float]) -> float:
-        """Calculate average of a list."""
         return sum(my_list) / len(my_list) if my_list else 0
-    
+
     def create_concat_file(self, video_files: List[str], folder_path: str) -> str:
-        """Create FFmpeg concat file with properly escaped paths.
-        
-        Args:
-            video_files: List of video file paths
-            folder_path: Folder to save concat file in
-            
-        Returns:
-            Path to the created concat file
-        """
         concat_file = os.path.join(folder_path, CONCAT_LIST_FILENAME).replace("\\", "/")
-        
         with open(concat_file, "w", encoding="utf-8") as f:
             for video in video_files:
-                # Convert to absolute path and normalize
                 abs_path = os.path.abspath(video)
-                # Use forward slashes for Windows compatibility with FFmpeg
                 normalized_path = abs_path.replace("\\", "/")
-                # Escape single quotes in path (FFmpeg concat format: ' becomes '\'')
                 escaped_path = normalized_path.replace("'", "'\\''")
-                # Write in FFmpeg concat format
                 f.write(f"file '{escaped_path}'\n")
-        
         return concat_file
-    
+
     def join_videos(
         self,
         concat_file: str,
         output_file: str,
         total_files: int,
-        output_text: Optional[tk.Text] = None,
-        root: Optional[tk.Tk] = None
-    ) -> None:
-        """Join videos using FFmpeg concat demuxer.
-        
-        Args:
-            concat_file: Path to concat list file
-            output_file: Output video file path
-            total_files: Total number of files being joined
-            output_text: Tkinter Text widget for output
-            root: Tkinter root window
-        """
+        reporter: Optional[ProgressReporter] = None,
+    ) -> bool:
+        rep = get_reporter(reporter)
         self._cancel_requested = False
-        
-        # Build FFmpeg command
         ffmpeg_cmd = FFmpegCommandBuilder.build_concat_command(concat_file, output_file)
-        
+
         try:
+            startupinfo = None
+            if os.name == "nt":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
             process = subprocess.Popen(
                 ffmpeg_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 encoding="utf-8",
-                errors="replace"
+                errors="replace",
+                startupinfo=startupinfo,
+                env=subprocess_env(),
             )
             self._current_process = process
-
-            if output_text:
-                output_text.insert("end", "\nStarting FFmpeg to join videos...\n")
-                output_text.see("end")
-
-                progress_line_index = output_text.index("end")
-                output_text.insert("end", f"[0/{total_files}] Progress: Starting...\n")
-                output_text.see("end")
-            else:
-                print("\nStarting FFmpeg to join videos...")
+            rep.on_log("\nStarting FFmpeg to join videos...\n")
+            rep.on_log(f"[0/{total_files}] Progress: Starting...\n")
 
             start_time = time.perf_counter()
-            avg_time_diff = [0] * 10
+            avg_time_diff = [0.0] * 10
             i = 0
+            last_progress_msg = ""
 
             for line in process.stdout:
-                # Check for cancellation
                 if self._cancel_requested:
                     process.terminate()
                     try:
                         process.wait(timeout=PROCESS_TERMINATION_TIMEOUT)
                     except subprocess.TimeoutExpired:
                         process.kill()
-                    if output_text and root:
-                        output_text.insert("end", "\nOperation cancelled by user\n")
-                        output_text.see("end")
-                    else:
-                        print("\nOperation cancelled by user")
+                    rep.on_log("\nOperation cancelled by user\n")
                     self._current_process = None
-                    # Clean up partial output file
                     if os.path.exists(output_file):
                         try:
                             os.remove(output_file)
-                            if output_text:
-                                output_text.insert("end", f"\nPartial output file removed.\n")
-                            else:
-                                print("\nPartial output file removed.")
+                            rep.on_log("\nPartial output file removed.\n")
                         except Exception:
                             pass
-                    # Close window after showing cancellation message
-                    if root:
-                        root.after(CANCELLATION_MESSAGE_DELAY, lambda: (
-                            messagebox.showinfo("Cancelled", "Operation was cancelled."),
-                            root.destroy()
-                        ))
-                    return
-                
+                    return False
+
                 match = re.search(r"frame=\s*(\d+)", line)
                 if match:
                     now = time.perf_counter()
@@ -157,67 +112,39 @@ class VideoJoiner:
                     elapsed_total_time = now - start_time
                     percentage = (elapsed_total_time / estimated_total_time) * 100 if estimated_total_time else 0
                     i = (i + 1) % 10
-
                     progress_message = f"[~/{total_files}] Progress: {percentage:.2f}% elapsed."
-                    if output_text:
-                        output_text.delete(progress_line_index, f"{progress_line_index} lineend")
-                        output_text.insert(progress_line_index, progress_message)
-                        output_text.see("end")
-                    else:
-                        if int(percentage) % 10 == 0:
-                            print(progress_message)
+                    if progress_message != last_progress_msg:
+                        last_progress_msg = progress_message
+                        rep.on_log(progress_message + "\n")
+                        rep.on_progress({"percent": percentage, "message": progress_message})
 
             process.wait()
             self._current_process = None
 
             if self._cancel_requested:
-                return
+                return False
 
             if process.returncode == 0:
-                if output_text:
-                    output_text.insert("end", f"\nSuccessfully joined videos into: {output_file}\n")
-                    output_text.see("end")
-                else:
-                    print(f"\nSuccessfully joined videos into: {output_file}")
-            else:
-                if output_text:
-                    output_text.insert("end", "\nFFmpeg failed! Check the output above for details.\n")
-                    output_text.see("end")
-                else:
-                    print("\nFFmpeg failed!")
+                rep.on_log(f"\nSuccessfully joined videos into: {output_file}\n")
+                return True
 
-            if root:
-                root.after(1000, lambda: (
-                    messagebox.showinfo("Done", "All videos have been joined!"),
-                    root.destroy()
-                ))
+            rep.on_log("\nFFmpeg failed! Check the output above for details.\n")
+            return False
 
         except FileNotFoundError:
             self._current_process = None
-            messagebox.showerror(
-                "Error", "FFmpeg not found! Make sure it's installed and added to PATH."
-            )
+            rep.on_log("FFmpeg not found! Make sure it's installed and added to PATH.\n")
+            logger.error("FFmpeg not found")
+            return False
         except Exception as e:
             self._current_process = None
-            if output_text:
-                output_text.insert("end", f"\nError: {str(e)}\n")
-                output_text.see("end")
-            else:
-                print(f"\nError: {str(e)}")
-    
+            rep.on_log(f"\nError: {e}\n")
+            logger.error(f"Error during join: {e}")
+            return False
+
     def get_video_files(self, folder_path: str) -> List[str]:
-        """Get list of video files from a folder.
-        
-        Args:
-            folder_path: Path to folder containing videos
-            
-        Returns:
-            Sorted list of video file paths
-        """
-        video_files = sorted([
+        return sorted([
             os.path.join(folder_path, f).replace("\\", "/")
             for f in os.listdir(folder_path)
             if f.lower().endswith(SUPPORTED_VIDEO_FORMATS)
         ])
-        return video_files
-

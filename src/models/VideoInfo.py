@@ -7,6 +7,8 @@ import logging
 from pathlib import Path
 from typing import Optional, Tuple
 
+from utils.ffmpeg_paths import get_ffprobe_exe, subprocess_env
+
 logger = logging.getLogger(__name__)
 
 
@@ -111,13 +113,13 @@ class VideoInfo:
         """
         try:
             cmd = [
-                "ffprobe", "-v", "error",
+                get_ffprobe_exe(), "-v", "error",
                 "-select_streams", "v:0",
                 "-show_entries", "stream=width,height,r_frame_rate",
                 "-of", "default=noprint_wrappers=1:nokey=1",
                 video_path
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=subprocess_env())
             lines = result.stdout.strip().splitlines()
             width = int(lines[0])
             height = int(lines[1])
@@ -143,13 +145,13 @@ class VideoInfo:
         """
         try:
             cmd = [
-                "ffprobe", "-v", "error",
+                get_ffprobe_exe(), "-v", "error",
                 "-select_streams", "v:0",
                 "-show_entries", "stream=codec_name,width,height,r_frame_rate",
                 "-of", "default=noprint_wrappers=1:nokey=1",
                 video_path
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=subprocess_env())
             codec, width, height, framerate = result.stdout.strip().splitlines()
             return codec, int(width), int(height), framerate
         except Exception as e:
@@ -167,13 +169,13 @@ class VideoInfo:
         """
         try:
             cmd = [
-                "ffprobe",
+                get_ffprobe_exe(),
                 "-v", "error",
                 "-show_entries", "format=duration:stream=r_frame_rate",
                 "-of", "default=noprint_wrappers=1:nokey=1",
                 video_path
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=subprocess_env())
             output_lines = result.stdout.strip().splitlines()
             if len(output_lines) > 2:
                 duration_str = output_lines[-1]
@@ -202,13 +204,13 @@ class VideoInfo:
         
         try:
             cmd = [
-                "ffprobe",
+                get_ffprobe_exe(),
                 "-v", "error",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1",
                 path
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=subprocess_env())
             duration_str = result.stdout.strip()
             if duration_str:
                 return float(duration_str)

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ffmpegMagic</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header class="app-header" role="banner">
+    <h1>ffmpegMagic — Video Editor</h1>
+  </header>
+
+  <nav class="app-nav" role="navigation" aria-label="Main navigation">
+    <button type="button" class="btn nav-btn" data-view="home">Home</button>
+    <button type="button" class="btn nav-btn" data-view="compress">Scale Down Videos</button>
+    <button type="button" class="btn nav-btn" data-view="join">Combine Videos</button>
+    <button type="button" class="btn nav-btn" data-view="settings">Settings</button>
+    <button type="button" class="btn btn-danger" id="btn-exit">Close Program</button>
+  </nav>
+
+  <main id="main-content" role="main">
+
+    <!-- Home -->
+    <section id="view-home" class="view active" aria-labelledby="home-title">
+      <h2 id="home-title" class="panel-title">Video Editor</h2>
+      <div class="home-grid">
+        <button type="button" class="btn btn-primary" data-view="compress">Scale Down A Videos</button>
+        <button type="button" class="btn btn-primary" data-view="join">Combine Videos</button>
+        <button type="button" class="btn" data-view="settings">Settings</button>
+      </div>
+    </section>
+
+    <!-- Compress -->
+    <section id="view-compress" class="view" aria-labelledby="compress-title">
+      <h2 id="compress-title" class="visually-hidden">Compress videos</h2>
+      <div class="compress-layout">
+        <aside class="panel" aria-label="Encoding settings">
+          <div class="panel">
+            <h3 class="panel-title">Performance Settings</h3>
+            <div class="field-row">
+              <label><input type="checkbox" id="compress-gpu" aria-label="Use GPU encoding (NVENC)"> Use GPU encoding (NVENC)</label>
+            </div>
+            <div class="field-row">
+              <label><input type="checkbox" id="compress-all-cores" aria-label="Use all CPU cores"> <span id="compress-cores-label">Use all CPU cores</span></label>
+            </div>
+            <div class="field-row">
+              <label><input type="checkbox" id="compress-cap-50" aria-label="Cap CPU usage at 50 percent"> Cap CPU usage at 50%</label>
+            </div>
+          </div>
+          <div class="panel">
+            <h3 class="panel-title">Video Settings</h3>
+            <div class="field-row">
+              <label class="field-label" for="compress-fps">Target FPS</label>
+              <select id="compress-fps"></select>
+            </div>
+            <div class="field-row">
+              <label class="field-label" for="compress-resolution">Resolution</label>
+              <select id="compress-resolution"></select>
+            </div>
+          </div>
+          <div class="panel">
+            <h3 class="panel-title">Encoding Settings</h3>
+            <div class="field-row">
+              <label class="field-label" for="compress-crf">CRF</label>
+              <select id="compress-crf"></select>
+            </div>
+            <div class="field-row">
+              <label class="field-label" for="compress-preset">Preset</label>
+              <select id="compress-preset"></select>
+            </div>
+            <div class="field-row">
+              <label class="field-label" for="compress-output">Output Folder</label>
+              <div class="toolbar">
+                <input type="text" id="compress-output" readonly aria-label="Output folder path">
+                <button type="button" class="btn" id="compress-browse-output">Browse</button>
+              </div>
+            </div>
+            <button type="button" class="btn" id="compress-reset">Reset to Defaults</button>
+          </div>
+        </aside>
+
+        <div class="panel">
+          <div class="toolbar">
+            <button type="button" class="btn" id="compress-add-files">Add Files</button>
+            <button type="button" class="btn" id="compress-add-folder">Add Folder</button>
+            <button type="button" class="btn" id="compress-remove">Remove Selected</button>
+            <button type="button" class="btn btn-primary" id="compress-run">Run Processing</button>
+            <button type="button" class="btn btn-danger" id="compress-cancel">Cancel</button>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="compress-table" aria-describedby="compress-table-hint">
+              <caption>Video queue — double-click a row to toggle orientation</caption>
+              <thead>
+                <tr>
+                  <th scope="col">File</th>
+                  <th scope="col">Resolution</th>
+                  <th scope="col">FPS</th>
+                  <th scope="col">Codec</th>
+                  <th scope="col">Duration</th>
+                  <th scope="col">Size</th>
+                  <th scope="col">Orientation</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody id="compress-tbody"></tbody>
+            </table>
+          </div>
+          <p id="compress-table-hint" class="visually-hidden">Double-click a row to toggle horizontal or vertical orientation.</p>
+
+          <div id="compress-progress-region" aria-live="polite" aria-atomic="false">
+            <div class="progress-grid" id="compress-metrics"></div>
+            <div class="progress-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="compress-progress-bar-wrap">
+              <div class="progress-bar-fill" id="compress-progress-bar"></div>
+            </div>
+          </div>
+          <pre class="log-pre" id="compress-log" aria-live="polite"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Join -->
+    <section id="view-join" class="view" aria-labelledby="join-title">
+      <h2 id="join-title" class="panel-title">Combine Videos</h2>
+      <div class="panel">
+        <div class="field-row">
+          <label class="field-label" for="join-input">Input Folder</label>
+          <div class="toolbar">
+            <input type="text" id="join-input" readonly>
+            <button type="button" class="btn" id="join-pick-input">Browse</button>
+          </div>
+        </div>
+        <div class="field-row">
+          <label class="field-label" for="join-output">Output Folder (optional)</label>
+          <div class="toolbar">
+            <input type="text" id="join-output" readonly placeholder="Same as input if empty">
+            <button type="button" class="btn" id="join-pick-output">Browse</button>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button type="button" class="btn btn-primary" id="join-start">Start Join</button>
+          <button type="button" class="btn btn-danger" id="join-cancel">Cancel</button>
+        </div>
+        <pre class="log-pre" id="join-log" aria-live="polite"></pre>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" class="view" aria-labelledby="settings-title">
+      <h2 id="settings-title" class="panel-title">Settings &amp; Configuration</h2>
+      <div class="panel">
+        <p><strong>Configuration File:</strong></p>
+        <div class="settings-path" id="settings-config-path"></div>
+        <div class="toolbar">
+          <button type="button" class="btn" id="settings-open-file">Open Config File</button>
+          <button type="button" class="btn" id="settings-open-folder">Open Config Folder</button>
+          <button type="button" class="btn" id="settings-copy-path">Copy Path</button>
+          <button type="button" class="btn" id="settings-check-updates">Check for Updates</button>
+        </div>
+        <h3 class="panel-title">Current Settings</h3>
+        <pre class="log-pre" id="settings-summary" aria-live="polite"></pre>
+        <h3 class="panel-title">FFmpeg</h3>
+        <p id="settings-ffmpeg-credit" class="field-row"></p>
+        <pre class="log-pre" id="settings-ffmpeg-notice" aria-live="polite"></pre>
+        <div class="toolbar">
+          <button type="button" class="btn" id="settings-ffmpeg-legal">FFmpeg legal information</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer" role="contentinfo">
+    <span id="app-version">v?</span>
+  </footer>
+
+  <!-- Alert modal -->
+  <div id="alert-modal" class="modal-overlay" role="alertdialog" aria-modal="true" aria-labelledby="alert-modal-title">
+    <div class="modal-box">
+      <h2 id="alert-modal-title">Notice</h2>
+      <p id="alert-modal-body"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="alert-modal-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Update modal -->
+  <div id="update-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
+    <div class="modal-box">
+      <h2 id="update-modal-title">Update Available</h2>
+      <p id="update-modal-version"></p>
+      <p id="update-modal-notes"></p>
+      <p>Download the installer and run setup manually.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" id="update-download">Download</button>
+        <button type="button" class="btn" id="update-later">Later</button>
+        <button type="button" class="btn" id="update-skip">Skip this version</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loading-overlay" aria-live="polite" aria-busy="true">
+    <div class="block-spinner"></div>
+  </div>
+  <div id="alert-region" role="status" aria-live="polite"></div>
+
+  <style>.visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }</style>
+
+  <script src="app.js"></script>
+  <script src="compress.js"></script>
+  <script src="join.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+FFmpeg third-party notice for ffmpegMagic
+=======================================
+
+This application uses command-line tools from the FFmpeg project.
+
+  Project:  https://ffmpeg.org
+  Legal:    https://www.ffmpeg.org/legal.html
+
+License
+-------
+
+FFmpeg is licensed under the GNU Lesser General Public License (LGPL)
+version 2.1 or later. Some optional components and pre-built Windows
+binaries used for video encoding (including H.264 via libx264) may be
+compiled with GPL-licensed parts. When those parts are used, the GPL
+applies to the FFmpeg binaries in use.
+
+You should read the license texts on the FFmpeg website and the LICENSE
+file shipped alongside the bundled ffmpeg.exe and ffprobe.exe.
+
+Trademark
+---------
+
+FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.
+
+Attribution (recommended wording)
+-------------------------------
+
+  This software uses libraries from the FFmpeg project, licensed under the
+  LGPLv2.1+ (and may include GPL components depending on the build).
+  FFmpeg source and build information: see vendor/ffmpeg/win64/SOURCE.txt
+  in the development tree, or the application's install directory when
+  distributed as a package.
+
+Bundled binaries (Windows installer)
+------------------------------------
+
+Windows installers built by this project bundle FFmpeg binaries obtained
+from the BtbN FFmpeg-Builds project (GPL shared build), used under the
+terms of the FFmpeg and libx264 licenses. Corresponding license files are
+included next to the executables.
+
+Source code for FFmpeg is available from:
+
+  https://ffmpeg.org/download.html
+  https://github.com/FFmpeg/FFmpeg
+
+Patents
+-------
+
+Use of FFmpeg may involve patented algorithms. See the FFmpeg legal FAQ
+at https://www.ffmpeg.org/legal.html for further information.

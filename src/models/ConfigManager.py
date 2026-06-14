@@ -5,6 +5,7 @@ Handles saving and loading user preferences to/from JSON file.
 
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 import logging
@@ -16,16 +17,40 @@ from .constants import (
 logger = logging.getLogger(__name__)
 
 
+def _legacy_config_path() -> Path:
+    return Path.home() / CONFIG_DIR_NAME / CONFIG_FILENAME
+
+
+def _resolve_config_paths():
+    """Resolve config dir/file via get_data_path with legacy migration."""
+    try:
+        from utils.core_functions import get_data_path
+        config_file = Path(get_data_path("config.json"))
+        config_dir = config_file.parent
+    except ImportError:
+        config_dir = Path.home() / CONFIG_DIR_NAME
+        config_file = config_dir / CONFIG_FILENAME
+
+    legacy = _legacy_config_path()
+    if not config_file.exists() and legacy.exists():
+        try:
+            config_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(legacy, config_file)
+            logger.info(f"Migrated config from {legacy} to {config_file}")
+        except OSError as e:
+            logger.warning(f"Could not migrate legacy config: {e}")
+
+    return config_dir, config_file
+
+
 class ConfigManager:
     """Manages application configuration and user preferences."""
-    
+
     def __init__(self):
-        """Initialize ConfigManager and load configuration."""
-        self.config_dir = Path.home() / CONFIG_DIR_NAME
-        self.config_file = self.config_dir / CONFIG_FILENAME
+        self.config_dir, self.config_file = _resolve_config_paths()
         self.config: Dict[str, Any] = {}
         self._load_config()
-    
+
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration values."""
         return {
@@ -37,16 +62,16 @@ class ConfigManager:
             "performance": {
                 "use_gpu": False,
                 "use_all_cores": False,
-                "cpu_cores": 0,  # Will be set dynamically
+                "cpu_cores": 0,
                 "cap_cpu_50": False
             },
             "video": {
-                "target_fps": None  # None to keep current, or float value
+                "target_fps": None
             },
             "encoding": {
                 "default_crf": DEFAULT_CRF,
                 "default_preset": DEFAULT_PRESET,
-                "default_resolution": "FHD"  # HD, FHD, or 4K
+                "default_resolution": "FHD"
             },
             "folders": {
                 "last_input_folder": "",
@@ -56,7 +81,13 @@ class ConfigManager:
             },
             "window": {
                 "geometry": "",
-                "state": "normal"  # normal, maximized, etc.
+                "state": "normal"
+            },
+            "updates": {
+                "update_check_enabled": True,
+                "update_last_check_at": "",
+                "update_snooze_until": "",
+                "update_skip_version": ""
             }
         }
     
@@ -265,6 +296,14 @@ class ConfigManager:
         self.config["window"]["state"] = state
         self._save_config()
     
+    def get_raw_config(self) -> Dict[str, Any]:
+        """Return full config dict (for update checker)."""
+        return self.config
+
+    def save_raw_config(self) -> bool:
+        """Persist full config dict."""
+        return self._save_config()
+
     # Generic get/set methods
     def get(self, key_path: str, default: Any = None) -> Any:
         """Get a configuration value using dot notation (e.g., 'ui.window_bg').

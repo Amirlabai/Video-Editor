@@ -3,6 +3,7 @@ FFmpegCommandBuilder class for constructing FFmpeg commands.
 """
 
 from typing import List, Optional
+from utils.ffmpeg_paths import get_ffmpeg_exe
 from .constants import (
     HD_WIDTH, HD_HEIGHT, FHD_WIDTH, FHD_HEIGHT, UHD_4K_WIDTH, UHD_4K_HEIGHT,
     DEFAULT_CRF, DEFAULT_PRESET, DEFAULT_AUDIO_CODEC, DEFAULT_AUDIO_BITRATE,
@@ -52,7 +53,7 @@ class FFmpegCommandBuilder:
         vf_string = ",".join(vf_parts)
         
         cmd = [
-            "ffmpeg", "-i", input_file,
+            get_ffmpeg_exe(), "-i", input_file,
             "-vf", vf_string,
             "-c:v", video_codec,
             "-crf", crf,
@@ -112,7 +113,7 @@ class FFmpegCommandBuilder:
         vf_string = ",".join(vf_parts)
         
         return [
-            "ffmpeg", "-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
+            get_ffmpeg_exe(), "-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
             "-i", input_file,
             "-vf", vf_string,
             "-c:v", video_codec,
@@ -138,7 +139,7 @@ class FFmpegCommandBuilder:
             List of command arguments
         """
         return [
-            "ffmpeg", "-f", "concat", "-safe", "0", "-i", concat_file,
+            get_ffmpeg_exe(), "-f", "concat", "-safe", "0", "-i", concat_file,
             "-c", "copy",
             "-progress", "pipe:1",
             "-nostats",

@@ -9,6 +9,7 @@ from models.VideoProcessor import VideoProcessor
 from models.VideoJoiner import VideoJoiner
 from models.ConfigManager import get_config_manager
 from models.VideoInfo import VideoInfo
+from models.progress_reporter import PrintProgressReporter
 from models.constants import HD_WIDTH, HD_HEIGHT, FHD_WIDTH, FHD_HEIGHT, UHD_4K_WIDTH, UHD_4K_HEIGHT
 
 # Absolute paths relative to the script location
@@ -51,6 +52,7 @@ def list_incoming():
 def compress(args):
     config = get_config_manager()
     processor = VideoProcessor()
+    reporter = PrintProgressReporter()
     
     action_dir, orig_dir = create_action_dir("compress")
     
@@ -96,8 +98,9 @@ def compress(args):
         success = False
         if use_gpu:
             processor.scale_video_gpu(
-                str(input_path), str(output_path), 
+                str(input_path), str(output_path),
                 total_frames=total_frames,
+                reporter=reporter,
                 xaxis=width, yaxis=height,
                 crf=crf, preset=preset,
                 input_duration=duration, input_fps=fps
@@ -107,6 +110,7 @@ def compress(args):
             processor.scale_video_cpu(
                 str(input_path), str(output_path),
                 total_frames=total_frames,
+                reporter=reporter,
                 xaxis=width, yaxis=height,
                 crf=crf, preset=preset,
                 input_duration=duration, input_fps=fps
@@ -146,7 +150,7 @@ def join_videos(args):
     output_file = str(action_dir / JOINED_OUTPUT_FILENAME)
     
     print(f"Joining videos into: {output_file}")
-    joiner.join_videos(concat_file, output_file, total_files)
+    joiner.join_videos(concat_file, output_file, total_files, reporter=PrintProgressReporter())
     
     # Clean up concat file
     if os.path.exists(concat_file):

@@ -6,3 +6,12 @@ status.md
 test files/
 .incoming/
 .agents/
+user_data/*
+!user_data/.gitkeep
+build/
+installer_files_*/
+!prod/installers/
+!prod/installers/*.exe
+vendor/ffmpeg/win64/*
+!vendor/ffmpeg/win64/.gitkeep
+!vendor/ffmpeg/win64/SOURCE.txt

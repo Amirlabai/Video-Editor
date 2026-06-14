@@ -1,0 +1,87 @@
+name: Attach Installer to Release
+
+# Upload committed installer to a GitHub Release on this repo and refresh latest.json.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version X.Y.Z (without v prefix)"
+        required: true
+  push:
+    branches: [main]
+    paths:
+      - "prod/installers/*.exe"
+
+permissions:
+  contents: write
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve version and tag
+        id: meta
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.release.tag_name }}" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+            VERSION="${TAG#v}"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            TAG="v${VERSION}"
+          else
+            INSTALLER=$(ls prod/installers/ffmpegMagic_Setup_*.exe 2>/dev/null | head -1)
+            if [ -z "$INSTALLER" ]; then
+              echo "No installer found under prod/installers/" >&2
+              exit 1
+            fi
+            BASENAME=$(basename "$INSTALLER" .exe)
+            VERSION="${BASENAME#ffmpegMagic_Setup_}"
+            TAG="v${VERSION}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "installer=prod/installers/ffmpegMagic_Setup_${VERSION}.exe" >> "$GITHUB_OUTPUT"
+
+      - name: Verify installer file
+        run: test -f "${{ steps.meta.outputs.installer }}"
+
+      - name: Write latest.json
+        run: |
+          python scripts/publish_public_release.py \
+            --version "${{ steps.meta.outputs.version }}" \
+            --installer "${{ steps.meta.outputs.installer }}" \
+            --write-manifest latest.json \
+            --notes "Release ${{ steps.meta.outputs.version }}"
+
+      - name: Upload installer to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.meta.outputs.tag }}" \
+            "${{ steps.meta.outputs.installer }}" \
+            --clobber
+
+      - name: Commit latest.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add latest.json
+          if git diff --staged --quiet; then
+            echo "latest.json unchanged"
+          else
+            git commit -m "chore: update latest.json for ${{ steps.meta.outputs.version }}"
+            git push
+          fi
