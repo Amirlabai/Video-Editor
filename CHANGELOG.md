@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.3 (2026-06-14)
+
+### Bug Fixes
+
+- **ci**: Chain installer build after semantic release
+  ([`fe75f2f`](https://github.com/Amirlabai/Video-Editor/commit/fe75f2f32d47cb39a931fbba6565ad3bb3f52b1f))
+
+
 ## v1.2.2 (2026-06-14)
 
 ### Bug Fixes
